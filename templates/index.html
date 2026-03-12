@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instagram Monitor</title>
+    <style>
+        :root {
+            --bg: #0b0b14;
+            --card: #12132a;
+            --card-alt: #181a36;
+            --accent: #e94560;
+            --accent-hover: #ff6b81;
+            --accent-glow: rgba(233, 69, 96, 0.25);
+            --text: #eaeaea;
+            --text-muted: #7b83a0;
+            --border: #252748;
+            --success: #2ecc71;
+            --warning: #f1c40f;
+            --info: #3498db;
+            --input-bg: #0d1738;
+            --shadow: 0 8px 32px rgba(0,0,0,0.5);
+            --radius: 12px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+        .header {
+            background: linear-gradient(135deg, #12132a 0%, #181a36 50%, #1a1040 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 0;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 4px 30px rgba(0,0,0,0.6);
+        }
+        .header-inner {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 0 28px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .logo-icon {
+            width: 38px;
+            height: 38px;
+            background: linear-gradient(135deg, var(--accent) 0%, #c92a4f 100%);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            box-shadow: 0 4px 14px var(--accent-glow);
+        }
+        .header h1 {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text);
+        }
+        .header h1 span {
+            background: linear-gradient(to right, var(--accent), #ff6b81);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .header-stats {
+            display: flex;
+            gap: 14px;
+            align-items: center;
+        }
+        .stat-badge {
+            background: var(--input-bg);
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+        }
+        .stat-badge strong { color: var(--text); }
+
+        .container {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 24px 28px 60px;
+        }
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow);
+            transition: border-color 0.2s;
+        }
+        .card:hover { border-color: #353760; }
+        .card-title {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--text);
+        }
+        .card-title .icon {
+            width: 30px;
+            height: 30px;
+            background: var(--card-alt);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+        }
+
+        .profile-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 8px;
+        }
+        .profile-chip {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: var(--card-alt);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            user-select: none;
+        }
+        .profile-chip:hover {
+            border-color: var(--accent);
+            background: rgba(233, 69, 96, 0.05);
+        }
+        .profile-chip.selected {
+            border-color: var(--accent);
+            background: rgba(233, 69, 96, 0.08);
+            box-shadow: 0 0 0 1px var(--accent-glow);
+        }
+        .profile-chip input[type="checkbox"] {
+            accent-color: var(--accent);
+            width: 15px;
+            height: 15px;
+        }
+        .profile-chip label {
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        .select-actions {
+            margin-bottom: 12px;
+            display: flex;
+            gap: 12px;
+        }
+        .select-actions button {
+            background: none;
+            border: none;
+            color: var(--accent);
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            padding: 4px 0;
+            transition: color 0.2s;
+        }
+        .select-actions button:hover { color: var(--accent-hover); }
+
+        .date-row {
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+            align-items: flex-end;
+        }
+        .date-group {
+            flex: 1;
+            min-width: 180px;
+        }
+        .date-group label {
+            display: block;
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .date-group input[type="date"] {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .date-group input[type="date"]:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+        .date-group input[type="date"]::-webkit-calendar-picker-indicator {
+            filter: invert(1);
+        }
+
+        .quick-ranges {
+            display: flex;
+            gap: 6px;
+            margin-top: 14px;
+            flex-wrap: wrap;
+        }
+        .quick-range-btn {
+            background: var(--card-alt);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 5px 12px;
+            color: var(--text-muted);
+            font-size: 11px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .quick-range-btn:hover {
+            border-color: var(--accent);
+            color: var(--text);
+            background: rgba(233, 69, 96, 0.06);
+        }
+        .quick-range-btn.active {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: rgba(233, 69, 96, 0.1);
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 11px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            letter-spacing: 0.2px;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent) 0%, #c92a4f 100%);
+            color: #fff;
+            box-shadow: 0 4px 14px var(--accent-glow);
+        }
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px var(--accent-glow);
+        }
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .btn-download {
+            background: linear-gradient(135deg, var(--success) 0%, #27ae60 100%);
+            color: #fff;
+            box-shadow: 0 4px 14px rgba(46, 204, 113, 0.25);
+        }
+        .btn-download:hover:not(:disabled) { transform: translateY(-1px); }
+        .btn-download:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+        }
+        .btn-outline:hover {
+            border-color: var(--text-muted);
+            color: var(--text);
+        }
+        .btn-row {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .progress-section { display: none; }
+        .progress-section.active { display: block; }
+
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .progress-stats {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        .progress-stat {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .progress-stat strong { color: var(--text); font-size: 16px; }
+        .progress-stat span { display: block; margin-top: 2px; }
+
+        .progress-bar-container {
+            background: var(--card-alt);
+            border-radius: 8px;
+            height: 6px;
+            overflow: hidden;
+            margin: 16px 0;
+        }
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(to right, var(--accent), #ff6b81);
+            border-radius: 8px;
+            transition: width 0.5s ease;
+            width: 0%;
+        }
+
+        .log-box {
+            background: #060714;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px;
+            margin-top: 12px;
+            max-height: 250px;
+            overflow-y: auto;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 11px;
+            line-height: 1.7;
+        }
+        .log-line { color: var(--text-muted); padding: 1px 0; }
+        .log-line.highlight { color: var(--success); }
+        .log-line.error { color: var(--accent); }
+        .log-line.info { color: var(--info); }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .status-dot.idle { background: var(--text-muted); }
+        .status-dot.running { background: var(--warning); animation: pulse 1s infinite; }
+        .status-dot.done { background: var(--success); }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+            margin-top: 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        .data-table thead th {
+            background: var(--card-alt);
+            color: var(--text-muted);
+            padding: 10px 14px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+            position: sticky;
+            top: 0;
+        }
+        .data-table tbody tr { transition: background 0.15s; }
+        .data-table tbody tr:hover { background: rgba(233, 69, 96, 0.04); }
+        .data-table tbody td {
+            padding: 10px 14px;
+            border-bottom: 1px solid rgba(37, 39, 72, 0.5);
+            color: var(--text);
+            max-width: 250px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .data-table tbody td.caption-cell {
+            max-width: 300px;
+            white-space: normal;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            line-height: 1.4;
+        }
+        .data-table .link-cell a {
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 11px;
+        }
+        .data-table .link-cell a:hover { text-decoration: underline; }
+        .data-table .no-data {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .badge-image { background: rgba(52, 152, 219, 0.15); color: var(--info); }
+        .badge-video { background: rgba(233, 69, 96, 0.15); color: var(--accent); }
+
+        .pagination {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .pagination-info {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .pagination-btns {
+            display: flex;
+            gap: 6px;
+        }
+        .page-btn {
+            background: var(--card-alt);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .page-btn:hover:not(:disabled) {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+        .page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        .page-btn.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+
+        .excel-info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 12px;
+        }
+        .excel-info-item {
+            background: var(--card-alt);
+            border-radius: 8px;
+            padding: 14px;
+            text-align: center;
+        }
+        .excel-info-item .value {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--text);
+        }
+        .excel-info-item .label {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .toast-container {
+            position: fixed;
+            top: 76px;
+            right: 24px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .toast {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 18px;
+            font-size: 13px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            animation: slideIn 0.3s ease;
+            max-width: 360px;
+        }
+        .toast.success { border-left: 3px solid var(--success); }
+        .toast.error { border-left: 3px solid var(--accent); }
+        .toast.info { border-left: 3px solid var(--info); }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes slideOut {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(100%); opacity: 0; }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-muted);
+        }
+        .empty-state .empty-icon { font-size: 40px; margin-bottom: 12px; }
+        .empty-state p { font-size: 13px; max-width: 400px; margin: 0 auto; }
+
+        @media (max-width: 768px) {
+            .header-inner { flex-direction: column; gap: 10px; }
+            .grid-2 { grid-template-columns: 1fr; }
+            .date-row { flex-direction: column; }
+            .profile-grid { grid-template-columns: 1fr 1fr; }
+            .container { padding: 16px 14px 40px; }
+        }
+        @media (max-width: 480px) {
+            .profile-grid { grid-template-columns: 1fr; }
+            .pagination { flex-direction: column; align-items: flex-start; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<div class="header">
+    <div class="header-inner">
+        <div class="logo">
+            <div class="logo-icon">&#128247;</div>
+            <h1><span>Instagram</span> Monitor</h1>
+        </div>
+        <div class="header-stats">
+            <span class="stat-badge"><strong id="profileCount">{{ profiles|length }}</strong> profiles</span>
+            <span class="stat-badge"><strong id="totalRows">{{ row_count }}</strong> posts</span>
+            <span class="stat-badge">
+                <span class="status-dot idle" id="statusDot"></span>&nbsp;
+                <span id="statusText">Idle</span>
+            </span>
+        </div>
+    </div>
+</div>
+
+<div class="container">
+
+    <div class="grid-2">
+        <div class="card">
+            <div class="card-title">
+                <span class="icon">&#128100;</span> Select Profiles
+            </div>
+            <div class="select-actions">
+                <button onclick="toggleAll(true)">Select All</button>
+                <button onclick="toggleAll(false)">Deselect All</button>
+            </div>
+            <div class="profile-grid" id="profileGrid">
+                {% for p in profiles %}
+                <div class="profile-chip selected" onclick="toggleChip(this)">
+                    <input type="checkbox" value="{{ p.username }}" checked>
+                    <label>@{{ p.username }}</label>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">
+                <span class="icon">&#128197;</span> Time Range
+            </div>
+            <div class="date-row">
+                <div class="date-group">
+                    <label for="dateFrom">From</label>
+                    <input type="date" id="dateFrom">
+                </div>
+                <div class="date-group">
+                    <label for="dateTo">To</label>
+                    <input type="date" id="dateTo">
+                </div>
+            </div>
+            <div class="quick-ranges" id="quickRanges">
+                <button class="quick-range-btn" onclick="setRange(1, this)">24h</button>
+                <button class="quick-range-btn" onclick="setRange(3, this)">3 days</button>
+                <button class="quick-range-btn active" onclick="setRange(7, this)">7 days</button>
+                <button class="quick-range-btn" onclick="setRange(14, this)">14 days</button>
+                <button class="quick-range-btn" onclick="setRange(30, this)">30 days</button>
+                <button class="quick-range-btn" onclick="setRange(90, this)">3 months</button>
+            </div>
+
+            <div class="btn-row">
+                <button class="btn btn-primary" id="btnScrape" onclick="startScrape()">
+                    &#9654; Start Scraping
+                </button>
+                <button class="btn btn-download" id="btnDownload"
+                    onclick="window.location='/download'"
+                    {% if not excel_exists %}disabled{% endif %}>
+                    &#11015; Download Excel
+                </button>
+                <button class="btn btn-outline" onclick="refreshDataTable()">
+                    &#8635; Refresh
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card progress-section" id="progressSection">
+        <div class="card-title">
+            <span class="icon">&#9881;</span> Scraping Progress
+        </div>
+        <div class="progress-header">
+            <div class="progress-stats">
+                <div class="progress-stat">
+                    <strong id="pDone">0</strong><span>/ <span id="pTotal">0</span> profiles</span>
+                </div>
+                <div class="progress-stat">
+                    <strong id="pPosts">0</strong><span>posts found</span>
+                </div>
+                <div class="progress-stat">
+                    <strong id="pCurrent">-</strong><span>current profile</span>
+                </div>
+            </div>
+        </div>
+        <div class="progress-bar-container">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <div class="log-box" id="logBox"></div>
+    </div>
+
+    <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom: 16px;">
+            <div class="card-title" style="margin-bottom:0">
+                <span class="icon">&#128196;</span> Scraped Data
+            </div>
+            <button class="btn btn-download" id="btnDownload2"
+                onclick="window.location='/download'"
+                {% if not excel_exists %}disabled{% endif %}
+                style="padding: 8px 18px; font-size: 12px;">
+                &#11015; Download Excel File
+            </button>
+        </div>
+
+        <div class="excel-info-grid" id="excelInfoGrid">
+            <div class="excel-info-item">
+                <div class="value" id="excelRows">{{ row_count }}</div>
+                <div class="label">Total Rows</div>
+            </div>
+            <div class="excel-info-item">
+                <div class="value" id="excelSize">-</div>
+                <div class="label">File Size</div>
+            </div>
+            <div class="excel-info-item">
+                <div class="value" id="excelFile">xlsx</div>
+                <div class="label">Format</div>
+            </div>
+        </div>
+
+        <div class="table-wrapper" id="tableWrapper">
+            <table class="data-table" id="dataTable">
+                <thead>
+                    <tr>
+                        <th>Profile</th>
+                        <th>Post Date</th>
+                        <th>Type</th>
+                        <th>Caption</th>
+                        <th>OCR Text</th>
+                        <th>Link</th>
+                        <th>Scraped At</th>
+                    </tr>
+                </thead>
+                <tbody id="dataTableBody">
+                    <tr>
+                        <td colspan="7" class="no-data">
+                            <div class="empty-state">
+                                <div class="empty-icon">&#128202;</div>
+                                <p>No data yet. Select profiles and a time range, then hit <strong>Start Scraping</strong> to populate this table.</p>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="pagination" id="pagination" style="display:none;">
+            <div class="pagination-info" id="paginationInfo">Showing 0 of 0</div>
+            <div class="pagination-btns" id="paginationBtns"></div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    let currentPage = 1;
+    const perPage = 25;
+    let currentJobId = null;
+    let pollTimer = null;
+
+    const today = new Date();
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setDate(today.getDate() - 7);
+    document.getElementById('dateTo').value = fmt(today);
+    document.getElementById('dateFrom').value = fmt(sevenDaysAgo);
+
+    function fmt(d) {
+        return d.toISOString().split('T')[0];
+    }
+
+    function setRange(days, btnEl) {
+        const to = new Date();
+        const from = new Date();
+        from.setDate(to.getDate() - days);
+        document.getElementById('dateFrom').value = fmt(from);
+        document.getElementById('dateTo').value = fmt(to);
+        document.querySelectorAll('.quick-range-btn').forEach(b => b.classList.remove('active'));
+        if (btnEl) btnEl.classList.add('active');
+    }
+
+    function toggleChip(el) {
+        const cb = el.querySelector('input[type="checkbox"]');
+        cb.checked = !cb.checked;
+        el.classList.toggle('selected', cb.checked);
+    }
+
+    function toggleAll(state) {
+        document.querySelectorAll('.profile-chip').forEach(el => {
+            el.querySelector('input[type="checkbox"]').checked = state;
+            el.classList.toggle('selected', state);
+        });
+    }
+
+    function getSelectedProfiles() {
+        const checked = document.querySelectorAll('.profile-chip input:checked');
+        return Array.from(checked).map(cb => cb.value);
+    }
+
+    function showToast(message, type) {
+        type = type || 'info';
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        toast.className = 'toast ' + type;
+        const icons = { success: '&#10003;', error: '&#10007;', info: '&#8505;' };
+        toast.innerHTML = '<span>' + (icons[type] || '') + '</span> ' + message;
+        container.appendChild(toast);
+        setTimeout(function() {
+            toast.style.animation = 'slideOut 0.3s ease forwards';
+            setTimeout(function() { toast.remove(); }, 300);
+        }, 4000);
+    }
+
+    async function startScrape() {
+        const profiles = getSelectedProfiles();
+        const dateFrom = document.getElementById('dateFrom').value;
+        const dateTo = document.getElementById('dateTo').value;
+
+        if (profiles.length === 0) {
+            showToast('Please select at least one profile.', 'error');
+            return;
+        }
+        if (!dateFrom || !dateTo) {
+            showToast('Please select both From and To dates.', 'error');
+            return;
+        }
+        if (dateFrom > dateTo) {
+            showToast('From date must be before To date.', 'error');
+            return;
+        }
+
+        const btn = document.getElementById('btnScrape');
+        btn.disabled = true;
+        btn.innerHTML = '&#9203; Scraping...';
+        setStatus('running', 'Scraping...');
+
+        const ps = document.getElementById('progressSection');
+        ps.classList.add('active');
+        document.getElementById('logBox').innerHTML = '';
+
+        showToast('Starting scrape for ' + profiles.length + ' profile(s)...', 'info');
+
+        try {
+            const resp = await fetch('/api/scrape', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    profiles: profiles,
+                    date_from: dateFrom,
+                    date_to: dateTo,
+                }),
+            });
+            const data = await resp.json();
+            if (data.error) {
+                showToast('Error: ' + data.error, 'error');
+                resetBtn();
+                return;
+            }
+            currentJobId = data.job_id;
+            pollStatus();
+        } catch (err) {
+            showToast('Request failed: ' + err.message, 'error');
+            resetBtn();
+        }
+    }
+
+    function pollStatus() {
+        if (!currentJobId) return;
+        pollTimer = setInterval(async function() {
+            try {
+                const resp = await fetch('/api/job/' + currentJobId);
+                const data = await resp.json();
+                updateProgress(data);
+
+                if (data.status === 'completed' || data.status === 'error') {
+                    clearInterval(pollTimer);
+                    pollTimer = null;
+                    currentJobId = null;
+                    resetBtn();
+                    if (data.status === 'completed') {
+                        setStatus('done', 'Done!');
+                        showToast('Scraping complete! ' + data.posts_found + ' posts found.', 'success');
+                    } else {
+                        setStatus('idle', 'Error');
+                        showToast('Scraping encountered an error.', 'error');
+                    }
+                    refreshExcelInfo();
+                    loadDataTable(1);
+                }
+            } catch (e) {}
+        }, 2000);
+    }
+
+    function updateProgress(data) {
+        document.getElementById('pDone').textContent = data.profiles_done;
+        document.getElementById('pTotal').textContent = data.total_profiles;
+        document.getElementById('pPosts').textContent = data.posts_found;
+        document.getElementById('pCurrent').textContent = data.current_profile || '-';
+
+        const pct = data.total_profiles > 0
+            ? Math.round((data.profiles_done / data.total_profiles) * 100) : 0;
+        document.getElementById('progressBar').style.width = pct + '%';
+
+        const logBox = document.getElementById('logBox');
+        logBox.innerHTML = '';
+        (data.logs || []).forEach(function(line) {
+            const div = document.createElement('div');
+            div.className = 'log-line';
+            if (line.indexOf('Error') !== -1 || line.indexOf('error') !== -1) div.className += ' error';
+            else if (line.indexOf('Saved') !== -1 || line.indexOf('Done') !== -1) div.className += ' highlight';
+            else if (line.indexOf('---') !== -1 || line.indexOf('===') !== -1) div.className += ' info';
+            div.textContent = line;
+            logBox.appendChild(div);
+        });
+        logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function resetBtn() {
+        const btn = document.getElementById('btnScrape');
+        btn.disabled = false;
+        btn.innerHTML = '&#9654; Start Scraping';
+        document.getElementById('btnDownload').disabled = false;
+        document.getElementById('btnDownload2').disabled = false;
+    }
+
+    function setStatus(state, text) {
+        const dot = document.getElementById('statusDot');
+        dot.className = 'status-dot ' + (state === 'running' ? 'running' : state === 'done' ? 'done' : 'idle');
+        document.getElementById('statusText').textContent = text;
+    }
+
+    async function refreshExcelInfo() {
+        try {
+            const resp = await fetch('/api/excel-info');
+            const data = await resp.json();
+            document.getElementById('totalRows').textContent = data.rows;
+            document.getElementById('excelRows').textContent = data.rows;
+            document.getElementById('excelSize').textContent = data.exists ? data.size_kb + ' KB' : '-';
+        } catch (e) {}
+    }
+
+    async function loadDataTable(page) {
+        currentPage = page || 1;
+        try {
+            const resp = await fetch('/api/excel-data?page=' + currentPage + '&per_page=' + perPage);
+            const data = await resp.json();
+            renderTable(data);
+        } catch (e) {
+            console.error('Failed to load data:', e);
+        }
+    }
+
+    function renderTable(data) {
+        const tbody = document.getElementById('dataTableBody');
+        const pagination = document.getElementById('pagination');
+
+        if (!data.rows || data.rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="no-data">' +
+                '<div class="empty-state">' +
+                '<div class="empty-icon">&#128202;</div>' +
+                '<p>No data yet. Select profiles and a time range, then hit <strong>Start Scraping</strong>.</p>' +
+                '</div></td></tr>';
+            pagination.style.display = 'none';
+            return;
+        }
+
+        tbody.innerHTML = '';
+        data.rows.forEach(function(row) {
+            const tr = document.createElement('tr');
+            const mediaType = (row['Media Type'] || '').toLowerCase();
+            const badgeClass = mediaType === 'video' ? 'badge-video' : 'badge-image';
+            const caption = row['Caption / Description'] || '';
+            const ocrText = row['OCR Text from Image'] || '';
+            const postUrl = row['Post URL'] || '';
+
+            tr.innerHTML =
+                '<td><strong>@' + escapeHtml(row['Profile'] || '') + '</strong></td>' +
+                '<td>' + escapeHtml(row['Post Date (UTC)'] || '') + '</td>' +
+                '<td><span class="badge ' + badgeClass + '">' + escapeHtml(row['Media Type'] || '-') + '</span></td>' +
+                '<td class="caption-cell" title="' + escapeHtml(caption) + '">' + escapeHtml(caption.substring(0, 120)) + (caption.length > 120 ? '...' : '') + '</td>' +
+                '<td class="caption-cell" title="' + escapeHtml(ocrText) + '">' + escapeHtml(ocrText.substring(0, 80)) + (ocrText.length > 80 ? '...' : '') + '</td>' +
+                '<td class="link-cell">' + (postUrl ? '<a href="' + escapeHtml(postUrl) + '" target="_blank" rel="noopener noreferrer">View &#8599;</a>' : '-') + '</td>' +
+                '<td>' + escapeHtml(row['Scraped At'] || '') + '</td>';
+            tbody.appendChild(tr);
+        });
+
+        const totalPages = Math.ceil(data.total / perPage);
+        pagination.style.display = 'flex';
+
+        const start = (currentPage - 1) * perPage + 1;
+        const end = Math.min(currentPage * perPage, data.total);
+        document.getElementById('paginationInfo').textContent =
+            'Showing ' + start + '-' + end + ' of ' + data.total + ' rows';
+
+        const btnsContainer = document.getElementById('paginationBtns');
+        btnsContainer.innerHTML = '';
+
+        var prevBtn = document.createElement('button');
+        prevBtn.className = 'page-btn';
+        prevBtn.innerHTML = '&laquo; Prev';
+        prevBtn.disabled = currentPage <= 1;
+        prevBtn.onclick = function() { loadDataTable(currentPage - 1); };
+        btnsContainer.appendChild(prevBtn);
+
+        var startPage = Math.max(1, currentPage - 2);
+        var endPage = Math.min(totalPages, startPage + 4);
+        for (var i = startPage; i <= endPage; i++) {
+            (function(pg) {
+                var btn = document.createElement('button');
+                btn.className = 'page-btn' + (pg === currentPage ? ' active' : '');
+                btn.textContent = pg;
+                btn.onclick = function() { loadDataTable(pg); };
+                btnsContainer.appendChild(btn);
+            })(i);
+        }
+
+        var nextBtn = document.createElement('button');
+        nextBtn.className = 'page-btn';
+        nextBtn.innerHTML = 'Next &raquo;';
+        nextBtn.disabled = currentPage >= totalPages;
+        nextBtn.onclick = function() { loadDataTable(currentPage + 1); };
+        btnsContainer.appendChild(nextBtn);
+    }
+
+    function refreshDataTable() {
+        loadDataTable(1);
+        refreshExcelInfo();
+        showToast('Data refreshed.', 'info');
+    }
+
+    function escapeHtml(text) {
+        var div = document.createElement('div');
+        div.appendChild(document.createTextNode(text));
+        return div.innerHTML;
+    }
+
+    refreshExcelInfo();
+    loadDataTable(1);
+</script>
+
+</body>
+</html>

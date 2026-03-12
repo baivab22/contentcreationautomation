@@ -1,0 +1,23 @@
+# Credentials and sessions
+config.json
+session/
+
+# Downloaded media
+downloaded_media/
+
+# Excel output
+instagram_posts.xlsx
+
+# Tracking
+seen_posts.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Backup
+scraper_old_instaloader.py
+
+# OS
+.DS_Store
