@@ -79,6 +79,7 @@
         }
         .header h1 span {
             background: linear-gradient(to right, var(--accent), #ff6b81);
+            background-clip: text;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
@@ -416,6 +417,7 @@
             max-width: 300px;
             white-space: normal;
             display: -webkit-box;
+            line-clamp: 2;
             -webkit-line-clamp: 2;
             -webkit-box-orient: vertical;
             overflow: hidden;
@@ -547,6 +549,152 @@
         .empty-state .empty-icon { font-size: 40px; margin-bottom: 12px; }
         .empty-state p { font-size: 13px; max-width: 400px; margin: 0 auto; }
 
+        .publisher-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+        .publisher-head-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .publisher-meta {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .publisher-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 14px;
+        }
+        .publisher-card {
+            background: var(--card-alt);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .publisher-preview-wrap {
+            background: #0a0d1e;
+            height: 180px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .publisher-preview {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .publisher-content {
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .publisher-file {
+            font-size: 12px;
+            font-weight: 600;
+            word-break: break-word;
+        }
+        .publisher-subtext {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+        .publisher-chip-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .publisher-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            border-radius: 999px;
+            padding: 4px 10px;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+        }
+        .chip-confirmed {
+            border-color: rgba(46, 204, 113, 0.5);
+            color: var(--success);
+            background: rgba(46, 204, 113, 0.08);
+        }
+        .chip-pending {
+            border-color: rgba(241, 196, 15, 0.5);
+            color: var(--warning);
+            background: rgba(241, 196, 15, 0.08);
+        }
+        .publisher-caption {
+            width: 100%;
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 8px;
+            padding: 8px 10px;
+            min-height: 72px;
+            resize: vertical;
+            font-size: 12px;
+            outline: none;
+        }
+        .publisher-caption:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+        .publisher-targets {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .publisher-targets label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+        .publisher-targets input[type="checkbox"] {
+            accent-color: var(--accent);
+        }
+        .publisher-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .publisher-actions .btn {
+            flex: 1;
+            justify-content: center;
+            padding: 9px 10px;
+            font-size: 12px;
+        }
+        .publisher-status {
+            font-size: 11px;
+            min-height: 16px;
+        }
+        .publisher-status.success { color: var(--success); }
+        .publisher-status.error { color: var(--accent); }
+        .publisher-status.info { color: var(--info); }
+        .publisher-empty {
+            border: 1px dashed var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
         @media (max-width: 768px) {
             .header-inner { flex-direction: column; gap: 10px; }
             .grid-2 { grid-template-columns: 1fr; }
@@ -662,6 +810,24 @@
             <div class="progress-bar" id="progressBar"></div>
         </div>
         <div class="log-box" id="logBox"></div>
+    </div>
+
+    <div class="card">
+        <div class="publisher-head">
+            <div class="card-title" style="margin-bottom:0">
+                <span class="icon">&#128640;</span> Confirm & Post
+            </div>
+            <div class="publisher-head-right">
+                <span class="publisher-meta" id="publisherMeta">Loading Canva designs from Google Drive...</span>
+                <button class="btn btn-outline" onclick="loadPublisherItems()" style="padding: 8px 14px; font-size: 12px;">
+                    &#8635; Refresh Files
+                </button>
+            </div>
+        </div>
+
+        <div id="publisherGrid" class="publisher-grid">
+            <div class="publisher-empty">Loading Canva files from Google Drive...</div>
+        </div>
     </div>
 
     <div class="card">
@@ -995,6 +1161,233 @@
         btnsContainer.appendChild(nextBtn);
     }
 
+    function escapeAttr(text) {
+        return String(text || '')
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    function encodePathForUrl(path) {
+        return String(path || '').split('/').map(encodeURIComponent).join('/');
+    }
+
+    function getPublisherMediaUrl(fileId) {
+        return '/publisher-media/drive/' + encodePathForUrl(fileId);
+    }
+
+    function defaultCaptionFromFilename(filename) {
+        var base = String(filename || '').replace(/\.[^/.]+$/, '');
+        return base.replace(/[_-]+/g, ' ').trim();
+    }
+
+    function findPublisherCardByFileId(fileId) {
+        var cards = document.querySelectorAll('.publisher-card');
+        for (var i = 0; i < cards.length; i++) {
+            if (cards[i].getAttribute('data-file-id') === fileId) {
+                return cards[i];
+            }
+        }
+        return null;
+    }
+
+    function setPublisherCardStatus(card, message, tone) {
+        var statusEl = card.querySelector('.js-status');
+        statusEl.className = 'publisher-status js-status ' + (tone || 'info');
+        statusEl.textContent = message || '';
+    }
+
+    function setPublisherCardConfirmed(card, confirmed) {
+        var chip = card.querySelector('.js-confirm-chip');
+        if (!chip) return;
+
+        chip.className = 'publisher-chip js-confirm-chip ' + (confirmed ? 'chip-confirmed' : 'chip-pending');
+        chip.textContent = confirmed ? 'Confirmed' : 'Pending confirm';
+    }
+
+    async function loadPublisherItems() {
+        var grid = document.getElementById('publisherGrid');
+        var meta = document.getElementById('publisherMeta');
+        grid.innerHTML = '<div class="publisher-empty">Loading Canva files from Google Drive...</div>';
+
+        try {
+            var resp = await fetch('/api/publisher/items?limit=60');
+            var data = await resp.json();
+            if (!resp.ok) {
+                throw new Error(data.error || 'Could not load Google Drive files');
+            }
+
+            renderPublisherItems(data.items || []);
+            meta.textContent = (data.count || 0) + ' Drive files ready';
+        } catch (err) {
+            grid.innerHTML = '<div class="publisher-empty">Failed to load Canva files from Google Drive.</div>';
+            meta.textContent = 'Load failed';
+            showToast('Publisher error: ' + err.message, 'error');
+        }
+    }
+
+    function renderPublisherItems(items) {
+        var grid = document.getElementById('publisherGrid');
+
+        if (!items.length) {
+            grid.innerHTML = '<div class="publisher-empty">No supported image or video files found in your Canva Google Drive folder.</div>';
+            return;
+        }
+
+        grid.innerHTML = '';
+
+        items.forEach(function(item) {
+            var card = document.createElement('div');
+            card.className = 'publisher-card';
+                        card.setAttribute('data-file-id', item.file_id);
+
+            var preview = item.media_type === 'video'
+                ? '<video class="publisher-preview" controls preload="metadata" src="' +
+                                    escapeAttr(getPublisherMediaUrl(item.file_id)) + '"></video>'
+                : '<img class="publisher-preview" loading="lazy" src="' +
+                                    escapeAttr(getPublisherMediaUrl(item.file_id)) +
+                  '" alt="' + escapeAttr(item.filename) + '">';
+
+            var chipClass = item.confirmed ? 'chip-confirmed' : 'chip-pending';
+            var chipLabel = item.confirmed ? 'Confirmed' : 'Pending confirm';
+            var postedTargets = (item.posted_targets || []).length
+                ? ' (' + item.posted_targets.join(', ') + ')'
+                : '';
+            var postedText = item.last_posted_at
+                ? 'Last posted: ' + item.last_posted_at + postedTargets
+                : 'Not posted yet';
+
+            card.innerHTML =
+                '<div class="publisher-preview-wrap">' + preview + '</div>' +
+                '<div class="publisher-content">' +
+                    '<div class="publisher-file">' + escapeHtml(item.filename) + '</div>' +
+                    '<div class="publisher-chip-row">' +
+                        '<span class="publisher-chip js-confirm-chip ' + chipClass + '">' + chipLabel + '</span>' +
+                        '<span class="publisher-subtext">Updated ' + escapeHtml(item.modified_at || '-') + '</span>' +
+                    '</div>' +
+                    '<textarea class="publisher-caption js-caption" placeholder="Write caption for this post..."></textarea>' +
+                    '<div class="publisher-targets">' +
+                        '<label><input type="checkbox" class="js-target-ig" checked> Instagram</label>' +
+                        '<label><input type="checkbox" class="js-target-fb" checked> Facebook</label>' +
+                    '</div>' +
+                    '<div class="publisher-actions">' +
+                        '<button class="btn btn-outline js-confirm-btn">Confirm</button>' +
+                        '<button class="btn btn-primary js-post-btn">Post</button>' +
+                    '</div>' +
+                    '<div class="publisher-subtext js-posted-note">' + escapeHtml(postedText) + '</div>' +
+                    '<div class="publisher-status js-status"></div>' +
+                '</div>';
+
+            var captionEl = card.querySelector('.js-caption');
+            captionEl.value = defaultCaptionFromFilename(item.filename);
+
+            card.querySelector('.js-confirm-btn').addEventListener('click', function() {
+                confirmPublisherItem(item.file_id);
+            });
+
+            card.querySelector('.js-post-btn').addEventListener('click', function() {
+                postPublisherItem(item.file_id);
+            });
+
+            grid.appendChild(card);
+        });
+    }
+
+    async function confirmPublisherItem(fileId) {
+        var card = findPublisherCardByFileId(fileId);
+        if (!card) return;
+
+        var confirmBtn = card.querySelector('.js-confirm-btn');
+        confirmBtn.disabled = true;
+        setPublisherCardStatus(card, 'Confirming...', 'info');
+
+        try {
+            var resp = await fetch('/api/publisher/confirm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ file_id: fileId }),
+            });
+            var data = await resp.json();
+            if (!resp.ok || data.error) {
+                throw new Error(data.error || 'Confirm failed');
+            }
+
+            setPublisherCardConfirmed(card, true);
+            setPublisherCardStatus(card, 'Confirmed. You can post now.', 'success');
+            showToast('Confirmed: ' + (data.filename || fileId), 'success');
+        } catch (err) {
+            setPublisherCardStatus(card, err.message, 'error');
+            showToast('Confirm failed: ' + err.message, 'error');
+        } finally {
+            confirmBtn.disabled = false;
+        }
+    }
+
+    async function postPublisherItem(fileId) {
+        var card = findPublisherCardByFileId(fileId);
+        if (!card) return;
+
+        var postBtn = card.querySelector('.js-post-btn');
+        var confirmBtn = card.querySelector('.js-confirm-btn');
+        var caption = card.querySelector('.js-caption').value.trim();
+        var postInstagram = card.querySelector('.js-target-ig').checked;
+        var postFacebook = card.querySelector('.js-target-fb').checked;
+
+        if (!postInstagram && !postFacebook) {
+            showToast('Select at least one destination.', 'error');
+            return;
+        }
+
+        postBtn.disabled = true;
+        confirmBtn.disabled = true;
+        setPublisherCardStatus(card, 'Posting...', 'info');
+
+        try {
+            var resp = await fetch('/api/publisher/post', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    file_id: fileId,
+                    caption: caption,
+                    post_instagram: postInstagram,
+                    post_facebook: postFacebook,
+                }),
+            });
+            var data = await resp.json();
+            if (!resp.ok || data.error) {
+                throw new Error(data.error || 'Post failed');
+            }
+
+            var successfulTargets = Object.keys(data.results || {});
+            var failedTargets = Object.keys(data.errors || {});
+            var postedNote = card.querySelector('.js-posted-note');
+
+            if (successfulTargets.length) {
+                postedNote.textContent = 'Last posted just now to ' + successfulTargets.join(', ');
+                setPublisherCardConfirmed(card, false);
+            }
+
+            if (data.status === 'partial') {
+                setPublisherCardStatus(
+                    card,
+                    'Posted partially. Failed: ' + failedTargets.join(', '),
+                    'info'
+                );
+                showToast('Posted partially to ' + successfulTargets.join(', '), 'info');
+            } else {
+                setPublisherCardStatus(card, 'Posted successfully.', 'success');
+                showToast('Posted successfully to ' + successfulTargets.join(', '), 'success');
+            }
+        } catch (err) {
+            setPublisherCardStatus(card, err.message, 'error');
+            showToast('Post failed: ' + err.message, 'error');
+        } finally {
+            postBtn.disabled = false;
+            confirmBtn.disabled = false;
+        }
+    }
+
     function refreshDataTable() {
         loadDataTable(1);
         refreshExcelInfo();
@@ -1009,6 +1402,7 @@
 
     refreshExcelInfo();
     loadDataTable(1);
+    loadPublisherItems();
 </script>
 
 </body>

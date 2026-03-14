@@ -1,5 +1,6 @@
 # Credentials and sessions
 config.json
+secrets/
 session/
 
 # Downloaded media
@@ -10,6 +11,8 @@ instagram_posts.xlsx
 
 # Tracking
 seen_posts.json
+publish_state.json
+tmp_publish/
 
 # Python
 __pycache__/
