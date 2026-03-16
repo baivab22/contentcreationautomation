@@ -765,6 +765,7 @@
                 </div>
             </div>
             <div class="quick-ranges" id="quickRanges">
+                <button class="quick-range-btn" onclick="startRecentFetchAll(1, this)">1h (all)</button>
                 <button class="quick-range-btn" onclick="setRange(1, this)">24h</button>
                 <button class="quick-range-btn" onclick="setRange(3, this)">3 days</button>
                 <button class="quick-range-btn active" onclick="setRange(7, this)">7 days</button>
@@ -778,7 +779,7 @@
                     &#9654; Start Scraping
                 </button>
                 <button class="btn btn-download" id="btnDownload"
-                    onclick="window.location='/download'"
+                    onclick="downloadCurrentExcel()"
                     {% if not excel_exists %}disabled{% endif %}>
                     &#11015; Download Excel
                 </button>
@@ -836,7 +837,7 @@
                 <span class="icon">&#128196;</span> Scraped Data
             </div>
             <button class="btn btn-download" id="btnDownload2"
-                onclick="window.location='/download'"
+                onclick="downloadCurrentExcel()"
                 {% if not excel_exists %}disabled{% endif %}
                 style="padding: 8px 18px; font-size: 12px;">
                 &#11015; Download Excel File
@@ -862,18 +863,17 @@
             <table class="data-table" id="dataTable">
                 <thead>
                     <tr>
-                        <th>Profile</th>
-                        <th>Post Date</th>
-                        <th>Type</th>
-                        <th>Caption</th>
-                        <th>OCR Text</th>
-                        <th>Link</th>
-                        <th>Scraped At</th>
+                        <th>Post Link</th>
+                        <th>Original Caption</th>
+                        <th>Generated Caption</th>
+                        <th>Generated Title</th>
+                        <th>Generated Description</th>
+                        <th>Simple Summary</th>
                     </tr>
                 </thead>
                 <tbody id="dataTableBody">
                     <tr>
-                        <td colspan="7" class="no-data">
+                        <td colspan="6" class="no-data">
                             <div class="empty-state">
                                 <div class="empty-icon">&#128202;</div>
                                 <p>No data yet. Select profiles and a time range, then hit <strong>Start Scraping</strong> to populate this table.</p>
@@ -897,6 +897,8 @@
     const perPage = 25;
     let currentJobId = null;
     let pollTimer = null;
+    let activeExcelFile = '';
+    let pendingExcelFile = '';
 
     const today = new Date();
     const sevenDaysAgo = new Date(today);
@@ -906,6 +908,20 @@
 
     function fmt(d) {
         return d.toISOString().split('T')[0];
+    }
+
+    function getExcelDownloadUrl() {
+        return '/download' + (activeExcelFile ? ('?file=' + encodeURIComponent(activeExcelFile)) : '');
+    }
+
+    function downloadCurrentExcel() {
+        window.location = getExcelDownloadUrl();
+    }
+
+    function setActiveExcelFile(fileRef) {
+        activeExcelFile = fileRef || '';
+        const fileLabel = activeExcelFile ? activeExcelFile.split('/').pop() : 'xlsx';
+        document.getElementById('excelFile').textContent = fileLabel;
     }
 
     function setRange(days, btnEl) {
@@ -951,6 +967,11 @@
     }
 
     async function startScrape() {
+        if (currentJobId) {
+            showToast('A scrape job is already running.', 'info');
+            return;
+        }
+
         const profiles = getSelectedProfiles();
         const dateFrom = document.getElementById('dateFrom').value;
         const dateTo = document.getElementById('dateTo').value;
@@ -976,6 +997,7 @@
         const ps = document.getElementById('progressSection');
         ps.classList.add('active');
         document.getElementById('logBox').innerHTML = '';
+        pendingExcelFile = '';
 
         showToast('Starting scrape for ' + profiles.length + ' profile(s)...', 'info');
 
@@ -990,11 +1012,62 @@
                 }),
             });
             const data = await resp.json();
-            if (data.error) {
+            if (!resp.ok || data.error) {
                 showToast('Error: ' + data.error, 'error');
                 resetBtn();
                 return;
             }
+            pendingExcelFile = data.excel_file || '';
+            currentJobId = data.job_id;
+            pollStatus();
+        } catch (err) {
+            showToast('Request failed: ' + err.message, 'error');
+            resetBtn();
+        }
+    }
+
+    async function startRecentFetchAll(hours, btnEl) {
+        if (currentJobId) {
+            showToast('A scrape job is already running.', 'info');
+            return;
+        }
+
+        const safeHours = Number(hours || 1);
+        if (!Number.isFinite(safeHours) || safeHours < 1) {
+            showToast('Invalid hour value.', 'error');
+            return;
+        }
+
+        document.querySelectorAll('.quick-range-btn').forEach(b => b.classList.remove('active'));
+        if (btnEl) btnEl.classList.add('active');
+
+        const btn = document.getElementById('btnScrape');
+        btn.disabled = true;
+        btn.innerHTML = '&#9203; Fetching...';
+        setStatus('running', 'Fetching last ' + safeHours + ' hour(s) for all listed accounts...');
+
+        const ps = document.getElementById('progressSection');
+        ps.classList.add('active');
+        document.getElementById('logBox').innerHTML = '';
+        pendingExcelFile = '';
+
+        showToast('Starting ' + safeHours + 'h fetch for all listed profiles...', 'info');
+
+        try {
+            const resp = await fetch('/api/fetch/recent', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    hours: safeHours,
+                }),
+            });
+            const data = await resp.json();
+            if (!resp.ok || data.error) {
+                showToast('Error: ' + data.error, 'error');
+                resetBtn();
+                return;
+            }
+            pendingExcelFile = data.excel_file || '';
             currentJobId = data.job_id;
             pollStatus();
         } catch (err) {
@@ -1009,6 +1082,9 @@
             try {
                 const resp = await fetch('/api/job/' + currentJobId);
                 const data = await resp.json();
+                if (data.excel_file) {
+                    pendingExcelFile = data.excel_file;
+                }
                 updateProgress(data);
 
                 if (data.status === 'completed' || data.status === 'error') {
@@ -1022,6 +1098,9 @@
                     } else {
                         setStatus('idle', 'Error');
                         showToast('Scraping encountered an error.', 'error');
+                    }
+                    if (pendingExcelFile) {
+                        setActiveExcelFile(pendingExcelFile);
                     }
                     refreshExcelInfo();
                     loadDataTable(1);
@@ -1070,8 +1149,12 @@
 
     async function refreshExcelInfo() {
         try {
-            const resp = await fetch('/api/excel-info');
+            const infoUrl = '/api/excel-info' + (activeExcelFile ? ('?file=' + encodeURIComponent(activeExcelFile)) : '');
+            const resp = await fetch(infoUrl);
             const data = await resp.json();
+            if (data.file) {
+                setActiveExcelFile(data.file);
+            }
             document.getElementById('totalRows').textContent = data.rows;
             document.getElementById('excelRows').textContent = data.rows;
             document.getElementById('excelSize').textContent = data.exists ? data.size_kb + ' KB' : '-';
@@ -1081,7 +1164,11 @@
     async function loadDataTable(page) {
         currentPage = page || 1;
         try {
-            const resp = await fetch('/api/excel-data?page=' + currentPage + '&per_page=' + perPage);
+            var tableUrl = '/api/excel-data?page=' + currentPage + '&per_page=' + perPage;
+            if (activeExcelFile) {
+                tableUrl += '&file=' + encodeURIComponent(activeExcelFile);
+            }
+            const resp = await fetch(tableUrl);
             const data = await resp.json();
             renderTable(data);
         } catch (e) {
@@ -1094,7 +1181,7 @@
         const pagination = document.getElementById('pagination');
 
         if (!data.rows || data.rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="no-data">' +
+            tbody.innerHTML = '<tr><td colspan="6" class="no-data">' +
                 '<div class="empty-state">' +
                 '<div class="empty-icon">&#128202;</div>' +
                 '<p>No data yet. Select profiles and a time range, then hit <strong>Start Scraping</strong>.</p>' +
@@ -1106,20 +1193,20 @@
         tbody.innerHTML = '';
         data.rows.forEach(function(row) {
             const tr = document.createElement('tr');
-            const mediaType = (row['Media Type'] || '').toLowerCase();
-            const badgeClass = mediaType === 'video' ? 'badge-video' : 'badge-image';
-            const caption = row['Caption / Description'] || '';
-            const ocrText = row['OCR Text from Image'] || '';
-            const postUrl = row['Post URL'] || '';
+            const postLink = row['postlink'] || row['Post URL'] || '';
+            const originalCaption = row['original caption'] || row['Caption / Description'] || '';
+            const generatedCaption = row['generated caption'] || row['generate caption/description'] || '';
+            const generatedTitle = row['generated title'] || row['postTItle'] || '';
+            const generatedDescription = row['generated description'] || row['newOcrText'] || row['OCR Text from Image'] || '';
+            const simpleSummary = row['simple summary'] || row['generatedSummary'] || row['summary'] || '';
 
             tr.innerHTML =
-                '<td><strong>@' + escapeHtml(row['Profile'] || '') + '</strong></td>' +
-                '<td>' + escapeHtml(row['Post Date (UTC)'] || '') + '</td>' +
-                '<td><span class="badge ' + badgeClass + '">' + escapeHtml(row['Media Type'] || '-') + '</span></td>' +
-                '<td class="caption-cell" title="' + escapeHtml(caption) + '">' + escapeHtml(caption.substring(0, 120)) + (caption.length > 120 ? '...' : '') + '</td>' +
-                '<td class="caption-cell" title="' + escapeHtml(ocrText) + '">' + escapeHtml(ocrText.substring(0, 80)) + (ocrText.length > 80 ? '...' : '') + '</td>' +
-                '<td class="link-cell">' + (postUrl ? '<a href="' + escapeHtml(postUrl) + '" target="_blank" rel="noopener noreferrer">View &#8599;</a>' : '-') + '</td>' +
-                '<td>' + escapeHtml(row['Scraped At'] || '') + '</td>';
+                '<td class="link-cell">' + (postLink ? '<a href="' + escapeAttr(postLink) + '" target="_blank" rel="noopener noreferrer">View &#8599;</a>' : '-') + '</td>' +
+                '<td class="caption-cell" title="' + escapeHtml(originalCaption) + '">' + escapeHtml(originalCaption.substring(0, 120)) + (originalCaption.length > 120 ? '...' : '') + '</td>' +
+                '<td class="caption-cell" title="' + escapeHtml(generatedCaption) + '">' + escapeHtml(generatedCaption.substring(0, 120)) + (generatedCaption.length > 120 ? '...' : '') + '</td>' +
+                '<td class="caption-cell" title="' + escapeHtml(generatedTitle) + '">' + escapeHtml(generatedTitle) + '</td>' +
+                '<td class="caption-cell" title="' + escapeHtml(generatedDescription) + '">' + escapeHtml(generatedDescription.substring(0, 140)) + (generatedDescription.length > 140 ? '...' : '') + '</td>' +
+                '<td class="caption-cell" title="' + escapeHtml(simpleSummary) + '">' + escapeHtml(simpleSummary.substring(0, 120)) + (simpleSummary.length > 120 ? '...' : '') + '</td>';
             tbody.appendChild(tr);
         });
 
@@ -1393,13 +1480,12 @@
         refreshExcelInfo();
         showToast('Data refreshed.', 'info');
     }
-
     function escapeHtml(text) {
         var div = document.createElement('div');
         div.appendChild(document.createTextNode(text));
         return div.innerHTML;
     }
-
+    setActiveExcelFile('');
     refreshExcelInfo();
     loadDataTable(1);
     loadPublisherItems();

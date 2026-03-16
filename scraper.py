@@ -14,6 +14,7 @@ import os
 import sys
 import time
 import random
+import re
 import hashlib
 import shutil
 import threading
@@ -40,41 +41,421 @@ CONFIG_FILE = BASE_DIR / "config.json"
 SESSION_DIR = BASE_DIR / "session"
 SEEN_FILE = BASE_DIR / "seen_posts.json"
 
+# ─── AI rewrite (OpenRouter) ────────────────────────────────────────────────
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-r1"
+DEFAULT_OPENROUTER_PROMPT = (
+    "You are a senior SEO expert. Use simple and clear words. "
+    "Generate a short title, a short description, and a one-sentence summary from the post caption."
+)
+
+_ai_cache: dict[str, dict] = {}
+_ai_cache_lock = threading.Lock()
+_ai_config_cache = None
+_ai_config_mtime = None
+
 # ─── Load config ──────────────────────────────────────────────────────────────
 def load_config():
     with open(CONFIG_FILE, "r") as f:
         return json.load(f)
 
+
+def _normalize_text(value: str, max_len: int | None = None) -> str:
+    text = (value or "").replace("\r\n", "\n").strip()
+    if max_len is not None:
+        return text[:max_len]
+    return text
+
+
+def _title_from_text(text: str) -> str:
+    words = re.findall(r"[A-Za-z0-9]+", text or "")
+    if not words:
+        return "Social Update"
+    return " ".join(words[:10]).strip().title()
+
+
+def _description_from_text(text: str, max_len: int = 320) -> str:
+    normalized = _normalize_text(text)
+    if not normalized:
+        return ""
+
+    compact = re.sub(r"\s+", " ", normalized)
+    sentences = re.split(r"(?<=[.!?])\s+", compact)
+    summary = " ".join(sentences[:2]).strip() if sentences else compact
+    return _normalize_text(summary, max_len)
+
+
+def _one_sentence_summary(text: str, max_len: int = 220) -> str:
+    normalized = _normalize_text(text)
+    if not normalized:
+        return ""
+
+    compact = re.sub(r"\s+", " ", normalized)
+    sentences = re.split(r"(?<=[.!?])\s+", compact)
+    summary = (sentences[0] if sentences else compact).strip()
+    if summary and summary[-1] not in ".!?":
+        summary = summary.rstrip(" ,;:") + "."
+    return _normalize_text(summary, max_len)
+
+
+def _build_hashtags(*parts: str, limit: int = 10) -> str:
+    source = " ".join([p for p in parts if p])
+    tokens = re.findall(r"[A-Za-z][A-Za-z0-9_]{2,}", source)
+    stop = {
+        "the", "and", "with", "from", "that", "this", "your", "about", "into",
+        "have", "just", "more", "what", "when", "where", "were", "will", "been",
+        "for", "you", "are", "our", "new", "only", "post", "caption", "image",
+    }
+
+    picked = []
+    for raw in tokens:
+        token = raw.lower()
+        if token in stop or len(token) < 4:
+            continue
+        hashtag = "#" + token.capitalize()
+        if hashtag not in picked:
+            picked.append(hashtag)
+        if len(picked) >= limit:
+            break
+
+    defaults = ["#InstagramGrowth", "#FacebookGrowth", "#SocialMedia", "#ContentMarketing"]
+    for tag in defaults:
+        if len(picked) >= limit:
+            break
+        if tag not in picked:
+            picked.append(tag)
+
+    return " ".join(picked)
+
+
+def _ensure_hashtags(caption: str, *parts: str) -> str:
+    body = _normalize_text(caption, 2100)
+    hashtag_count = len(re.findall(r"#[A-Za-z0-9_]+", body))
+    if hashtag_count >= 5:
+        return body
+
+    hashtags = _build_hashtags(body, *parts, limit=10)
+    if not hashtags:
+        return body
+
+    if not body:
+        return hashtags
+    if hashtags in body:
+        return body
+
+    return _normalize_text(f"{body}\n\n{hashtags}", 2200)
+
+
+def _fallback_ai_rewrite(caption: str, ocr_text: str) -> dict:
+    clean_caption = _normalize_text(caption, 1900)
+    clean_ocr = _normalize_text(ocr_text, 1800)
+
+    generated_caption = _ensure_hashtags(
+        clean_caption or clean_ocr or "Fresh update",
+        clean_caption,
+        clean_ocr,
+    )
+
+    generated_description = _description_from_text(clean_caption or clean_ocr)
+    if not generated_description:
+        generated_description = "Simple update shared for social media audiences."
+
+    generated_summary = _one_sentence_summary(clean_caption or clean_ocr or generated_description)
+    if not generated_summary:
+        generated_summary = _one_sentence_summary(generated_description)
+
+    new_ocr = clean_ocr or _normalize_text(clean_caption, 600)
+    title_source = new_ocr or clean_caption
+    generated_title = _normalize_text(_title_from_text(title_source), 120)
+
+    return {
+        "generated_caption": _normalize_text(generated_caption, 2200),
+        "generated_description": _normalize_text(generated_description, 420),
+        "generated_summary": _normalize_text(generated_summary, 220),
+        "generated_title": generated_title,
+        "new_ocr_text": _normalize_text(new_ocr, 1800),
+        "post_title": generated_title,
+    }
+
+
+def _extract_json_object(raw_text: str):
+    text = (raw_text or "").strip()
+    if not text:
+        return None
+
+    if text.startswith("```"):
+        lines = text.splitlines()
+        lines = [ln for ln in lines if not ln.startswith("```")]
+        text = "\n".join(lines).strip()
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                return json.loads(text[start:end + 1])
+            except json.JSONDecodeError:
+                return None
+    return None
+
+
+def get_ai_rewrite_config():
+    global _ai_config_cache, _ai_config_mtime
+
+    config_mtime = None
+    try:
+        config_mtime = CONFIG_FILE.stat().st_mtime
+    except FileNotFoundError:
+        pass
+
+    if _ai_config_cache is None or _ai_config_mtime != config_mtime:
+        config = load_config()
+        ai_cfg = config.get("ai", {}).get("openrouter", {})
+        api_key = os.getenv("OPENROUTER_API_KEY") or ai_cfg.get("api_key", "")
+        model = os.getenv("OPENROUTER_MODEL") or ai_cfg.get("model", DEFAULT_OPENROUTER_MODEL)
+        prompt = ai_cfg.get("prompt") or DEFAULT_OPENROUTER_PROMPT
+
+        _ai_config_cache = {
+            "enabled": bool(api_key),
+            "api_key": api_key,
+            "model": model,
+            "prompt": prompt,
+            "timeout": int(ai_cfg.get("timeout_seconds", 90)),
+            "temperature": float(ai_cfg.get("temperature", 0.5)),
+        }
+        _ai_config_mtime = config_mtime
+
+    return _ai_config_cache
+
+
+def rewrite_with_ai(caption: str, ocr_text: str, profile: str = "") -> dict:
+    baseline = _fallback_ai_rewrite(caption, ocr_text)
+    cfg = get_ai_rewrite_config()
+
+    cache_key = hashlib.sha1(f"{caption}||{ocr_text}".encode("utf-8")).hexdigest()
+    with _ai_cache_lock:
+        if cache_key in _ai_cache:
+            return _ai_cache[cache_key]
+
+    if not cfg.get("enabled"):
+        with _ai_cache_lock:
+            _ai_cache[cache_key] = baseline
+        return baseline
+
+    system_prompt = (
+        "You are a senior SEO and social media ranking expert for Instagram and Facebook. "
+        "Use simple, easy words that anyone can understand. Keep all facts truthful to the original. "
+        "Use the original caption as the main source, and use OCR text only if caption is empty or unclear. "
+        "Return strict JSON only with keys: generatedCaption, generatedTitle, generatedDescription, generatedSummary. "
+        "generatedCaption must include 8-12 SEO-friendly hashtags at the end."
+    )
+
+    user_prompt = (
+        f"Instruction: {cfg['prompt']}\n\n"
+        f"Profile: {profile}\n"
+        f"Original caption/description:\n{caption or '[empty]'}\n\n"
+        f"Original OCR text:\n{ocr_text or '[empty]'}\n\n"
+        "Output requirements:\n"
+        "1) generatedCaption: rewritten SEO caption with 8-12 relevant hashtags.\n"
+        "2) generatedTitle: very short, simple title, max 8 words.\n"
+        "3) generatedDescription: short description in simple words, max 2 sentences.\n"
+        "4) generatedSummary: one sentence summary in very simple words.\n"
+        "Return strict JSON only."
+    )
+
+    payload = {
+        "model": cfg["model"],
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": cfg["temperature"],
+    }
+
+    headers = {
+        "Authorization": f"Bearer {cfg['api_key']}",
+        "Content-Type": "application/json",
+    }
+
+    for attempt in range(2):
+        try:
+            resp = _requests.post(
+                OPENROUTER_API_URL,
+                headers=headers,
+                json=payload,
+                timeout=cfg["timeout"],
+            )
+            resp.raise_for_status()
+            body = resp.json()
+            content = (
+                body.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+            )
+
+            parsed = _extract_json_object(content)
+            if not isinstance(parsed, dict):
+                raise ValueError("AI response is not valid JSON")
+
+            generated_caption = parsed.get("generatedCaption") or parsed.get("generated_caption") or ""
+            generated_title = (
+                parsed.get("generatedTitle")
+                or parsed.get("generated_title")
+                or parsed.get("postTitle")
+                or parsed.get("post_title")
+                or ""
+            )
+            generated_description = (
+                parsed.get("generatedDescription")
+                or parsed.get("generated_description")
+                or parsed.get("newOcrText")
+                or parsed.get("new_ocr_text")
+                or ""
+            )
+            generated_summary = (
+                parsed.get("generatedSummary")
+                or parsed.get("generated_summary")
+                or parsed.get("simpleSummary")
+                or parsed.get("simple_summary")
+                or parsed.get("summary")
+                or ""
+            )
+            new_ocr_text = parsed.get("newOcrText") or parsed.get("new_ocr_text") or ""
+            if not new_ocr_text:
+                new_ocr_text = generated_description
+
+            normalized_caption = _normalize_text(generated_caption, 2200) or baseline["generated_caption"]
+            normalized_title = _normalize_text(generated_title, 120) or baseline["generated_title"]
+            normalized_description = _normalize_text(generated_description, 420) or baseline["generated_description"]
+            normalized_summary = _normalize_text(generated_summary, 220) or baseline["generated_summary"]
+
+            result = {
+                "generated_caption": _ensure_hashtags(normalized_caption, caption, ocr_text, profile),
+                "generated_description": normalized_description,
+                "generated_summary": normalized_summary,
+                "generated_title": normalized_title,
+                "new_ocr_text": _normalize_text(new_ocr_text, 1800) or baseline["new_ocr_text"],
+                "post_title": normalized_title,
+            }
+
+            with _ai_cache_lock:
+                _ai_cache[cache_key] = result
+            return result
+        except Exception as e:
+            if attempt == 0:
+                time.sleep(1.2)
+                continue
+            print(f"  [AI] Rewrite fallback used: {e}")
+
+    with _ai_cache_lock:
+        _ai_cache[cache_key] = baseline
+    return baseline
+
 # ─── Session management ──────────────────────────────────────────────────────
-def get_loader(config):
-    """Create an instagrapi Client and login with session persistence."""
+def _is_challenge_error(e: Exception) -> bool:
+    msg = str(e).lower()
+    return (
+        "challengeunknownstep" in type(e).__name__.lower()
+        or "challenge" in msg
+        or "checkpoint" in msg
+    )
+
+
+def _is_blacklist_error(e: Exception) -> bool:
+    msg = str(e).lower()
+    markers = (
+        "blacklist",
+        "ip address",
+        "help you get back into your account",
+    )
+    return any(marker in msg for marker in markers)
+
+
+def _try_load_session(session_path: Path):
+    """Return (client, username, error) after attempting session validation."""
     cl = Client()
     cl.delay_range = [2, 5]
+    try:
+        cl.load_settings(str(session_path))
+        info = cl.account_info()
+        return cl, info.username, None
+    except Exception as e:
+        return None, None, e
 
+
+def get_loader(config):
+    """Create an instagrapi Client and login with session persistence.
+
+    Strategy:
+      1. Try the configured account's saved session file and validate it with
+         account_info() without forcing a fresh login.
+      2. If unavailable, try any other reusable session file in session/.
+      3. Only then attempt fresh login with configured credentials.
+      4. Challenge and blacklist errors return actionable guidance.
+    """
     username = config["instagram_credentials"]["username"]
     password = config["instagram_credentials"]["password"]
     session_file = SESSION_DIR / f"session-{username}.json"
     SESSION_DIR.mkdir(exist_ok=True)
 
-    # 1) Try loading saved session
+    # ── 1. Try configured account session first ─────────────────────────────
     if session_file.exists():
         print(f"[*] Loading saved session for @{username}...")
-        try:
-            cl.load_settings(str(session_file))
-            cl.login(username, password)
-            cl.get_timeline_feed()
-            print(f"[+] Session valid for @{username}")
+        cl, active_username, error = _try_load_session(session_file)
+        if cl is not None:
+            print(f"[+] Session valid for @{active_username}")
             return cl
-        except Exception as e:
-            print(f"[!] Saved session invalid ({e}), doing fresh login...")
+        if error is not None and _is_challenge_error(error):
             session_file.unlink(missing_ok=True)
+            raise RuntimeError(
+                f"Instagram requires manual verification for @{username}. "
+                "Log in via a browser or the official app and approve the "
+                "security check, then try again."
+            ) from error
+        print(f"[!] Saved session unusable ({type(error).__name__}), trying other saved sessions...")
 
-    # 2) Fresh login
-    print(f"[*] Logging in as @{username}...")
-    cl.login(username, password)
-    cl.dump_settings(str(session_file))
-    print(f"[+] Login successful. Session saved.")
-    return cl
+    # ── 2. Try any other reusable session file before fresh login ───────────
+    other_sessions = sorted(
+        [p for p in SESSION_DIR.glob("session-*.json") if p != session_file],
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    for candidate in other_sessions:
+        print(f"[*] Trying fallback session file: {candidate.name}")
+        cl, active_username, error = _try_load_session(candidate)
+        if cl is not None:
+            print(
+                f"[+] Reused saved session from @{active_username} "
+                f"(configured login: @{username})"
+            )
+            return cl
+        print(f"[!] Fallback session skipped ({type(error).__name__}).")
+
+    # ── 3. Fresh login (no reusable saved session) ──────────────────────────
+    print(f"[*] Logging in fresh as @{username}...")
+    cl = Client()
+    cl.delay_range = [2, 5]
+    try:
+        cl.login(username, password)
+        cl.dump_settings(str(session_file))
+        print(f"[+] Login successful. Session saved.")
+        return cl
+    except Exception as e:
+        if _is_challenge_error(e):
+            raise RuntimeError(
+                f"Instagram requires manual verification for @{username}. "
+                "Log in via a browser or the official app and approve the "
+                "security check, then try again."
+            ) from e
+        if _is_blacklist_error(e):
+            raise RuntimeError(
+                f"Instagram blocked login for @{username} from this network/IP. "
+                "Use a different network (for example mobile hotspot), approve login in the "
+                "Instagram app/web, or keep a reusable session file in session/ and retry."
+            ) from e
+        raise
 
 
 # ─── Seen-posts tracking ─────────────────────────────────────────────────────
@@ -114,31 +495,37 @@ def _download_url(url: str, filepath: Path):
         f.write(resp.content)
 
 
+def is_carousel_media(media: Media) -> bool:
+    """Best-effort carousel detection across instagrapi versions/payload shapes."""
+    if getattr(media, "media_type", None) == 8:
+        return True
+
+    product_type = (getattr(media, "product_type", "") or "").lower()
+    if "carousel" in product_type:
+        return True
+
+    resources = getattr(media, "resources", None) or []
+    if len(resources) > 1:
+        return True
+
+    return False
+
+
 def download_post_media(cl, media: Media, media_folder: Path) -> list[dict]:
     """Download all media (images/videos) for a post. Returns list of {path, type}."""
     media_folder.mkdir(parents=True, exist_ok=True)
     media_files = []
+
+    # Carousels are intentionally excluded from fetching.
+    if is_carousel_media(media):
+        return media_files
 
     code = media.code
     date_str = media.taken_at.strftime("%Y%m%d_%H%M%S")
     owner = media.user.username if media.user else "unknown"
     base_name = f"{owner}_{date_str}_{code}"
 
-    if media.media_type == 8:  # Album / carousel
-        for idx, resource in enumerate(media.resources or [], 1):
-            if resource.video_url:
-                ext = "mp4"
-                url = str(resource.video_url)
-                mtype = "video"
-            else:
-                ext = "jpg"
-                url = str(resource.thumbnail_url)
-                mtype = "image"
-            filename = f"{base_name}_{idx}.{ext}"
-            filepath = media_folder / filename
-            _download_url(url, filepath)
-            media_files.append({"path": str(filepath), "type": mtype})
-    elif media.media_type == 2 and media.video_url:  # Video
+    if media.media_type == 2 and media.video_url:  # Video
         filename = f"{base_name}.mp4"
         filepath = media_folder / filename
         _download_url(str(media.video_url), filepath)
@@ -155,17 +542,48 @@ def download_post_media(cl, media: Media, media_folder: Path) -> list[dict]:
 
 # ─── Excel management ────────────────────────────────────────────────────────
 HEADERS = [
+    "postlink",
+    "original caption",
+    "generated caption",
+    "generated title",
+    "generated description",
+    "simple summary",
     "Profile",
     "Post Date (UTC)",
     "Shortcode",
-    "Caption / Description",
     "Media Type",
     "Media File Path",
     "Embedded Image",
     "OCR Text from Image",
-    "Post URL",
     "Scraped At",
 ]
+
+HEADER_WIDTHS = {
+    "postlink": 42,
+    "original caption": 55,
+    "generated caption": 60,
+    "generated title": 32,
+    "generated description": 48,
+    "simple summary": 44,
+    "Profile": 18,
+    "Post Date (UTC)": 22,
+    "Shortcode": 16,
+    "Media Type": 12,
+    "Media File Path": 40,
+    "Embedded Image": 25,
+    "OCR Text from Image": 50,
+    "Scraped At": 22,
+}
+
+LEGACY_HEADER_RENAMES = {
+    "Post URL": "postlink",
+    "Caption / Description": "original caption",
+    "generate caption/description": "generated caption",
+    "postTItle": "generated title",
+    "newOcrText": "generated description",
+    "generatedSummary": "simple summary",
+    "summary": "simple summary",
+}
 
 HEADER_FILL = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
 HEADER_FONT = Font(color="FFFFFF", bold=True, size=11)
@@ -177,25 +595,72 @@ THIN_BORDER = Border(
 )
 
 
+def _style_header_cell(cell):
+    cell.fill = HEADER_FILL
+    cell.font = HEADER_FONT
+    cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    cell.border = THIN_BORDER
+
+
+def _get_header_index_map(ws) -> dict[str, int]:
+    index = {}
+    for col_idx in range(1, ws.max_column + 1):
+        value = ws.cell(row=1, column=col_idx).value
+        if isinstance(value, str) and value.strip():
+            index[value.strip()] = col_idx
+    return index
+
+
+def _ensure_headers(ws) -> bool:
+    changed = False
+    header_index = _get_header_index_map(ws)
+
+    for legacy_name, canonical_name in LEGACY_HEADER_RENAMES.items():
+        legacy_col = header_index.get(legacy_name)
+        if not legacy_col or canonical_name in header_index:
+            continue
+
+        cell = ws.cell(row=1, column=legacy_col, value=canonical_name)
+        _style_header_cell(cell)
+        header_index.pop(legacy_name, None)
+        header_index[canonical_name] = legacy_col
+        changed = True
+
+    for header in HEADERS:
+        if header not in header_index:
+            col_idx = ws.max_column + 1
+            cell = ws.cell(row=1, column=col_idx, value=header)
+            _style_header_cell(cell)
+            header_index[header] = col_idx
+            changed = True
+
+    for header, width in HEADER_WIDTHS.items():
+        col_idx = header_index.get(header)
+        if not col_idx:
+            continue
+        col_letter = get_column_letter(col_idx)
+        ws.column_dimensions[col_letter].width = width
+
+    return changed
+
+
 def get_or_create_workbook(excel_path: str):
     """Open existing workbook or create a new one with headers."""
     if os.path.exists(excel_path):
         wb = load_workbook(excel_path)
         ws = wb.active
+        changed = _ensure_headers(ws)
+        if changed:
+            wb.save(excel_path)
     else:
         wb = Workbook()
         ws = wb.active
         ws.title = "Instagram Posts"
         for col_idx, header in enumerate(HEADERS, 1):
             cell = ws.cell(row=1, column=col_idx, value=header)
-            cell.fill = HEADER_FILL
-            cell.font = HEADER_FONT
-            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-            cell.border = THIN_BORDER
+            _style_header_cell(cell)
 
-        col_widths = [18, 22, 16, 50, 12, 40, 25, 50, 40, 22]
-        for i, w in enumerate(col_widths, 1):
-            ws.column_dimensions[get_column_letter(i)].width = w
+        _ensure_headers(ws)
 
         wb.save(excel_path)
 
@@ -229,6 +694,8 @@ def make_thumbnail(image_path: str, max_size: int = 150) -> str | None:
 def append_post_to_excel(excel_path: str, row_data: dict, media_files: list[dict]):
     """Append one or more rows (one per media item) for a post to the Excel file."""
     wb, ws = get_or_create_workbook(excel_path)
+    header_index = _get_header_index_map(ws)
+    embedded_col_idx = header_index.get("Embedded Image", 7)
 
     for media in media_files:
         next_row = ws.max_row + 1
@@ -239,19 +706,48 @@ def append_post_to_excel(excel_path: str, row_data: dict, media_files: list[dict
         if media_type == "image":
             ocr_text = extract_text_from_image(media_path)
 
-        values = [
-            row_data["profile"],
-            row_data["post_date"],
-            row_data["shortcode"],
-            row_data["caption"],
-            media_type,
-            media_path,
-            "",
-            ocr_text,
-            row_data["post_url"],
-            row_data["scraped_at"],
-        ]
-        for col_idx, val in enumerate(values, 1):
+        ai_rewrite = rewrite_with_ai(
+            caption=row_data.get("caption", ""),
+            ocr_text=ocr_text,
+            profile=row_data.get("profile", ""),
+        )
+
+        # Keep OCR column populated even when local OCR engine is unavailable.
+        if media_type == "image":
+            normalized_ocr = _normalize_text(ocr_text)
+            if (not normalized_ocr) or normalized_ocr.startswith("[OCR Error"):
+                ocr_text = ai_rewrite.get("new_ocr_text", "") or _normalize_text(
+                    row_data.get("caption", ""),
+                    800,
+                )
+
+        generated_title = ai_rewrite.get("generated_title") or ai_rewrite.get("post_title", "")
+        generated_description = ai_rewrite.get("generated_description") or ai_rewrite.get("new_ocr_text", "")
+        generated_summary = ai_rewrite.get("generated_summary") or _one_sentence_summary(
+            row_data.get("caption", "") or generated_description
+        )
+
+        row_values = {
+            "postlink": row_data.get("post_url", ""),
+            "original caption": row_data.get("caption", ""),
+            "generated caption": ai_rewrite.get("generated_caption", ""),
+            "generated title": generated_title,
+            "generated description": generated_description,
+            "simple summary": generated_summary,
+            "Profile": row_data.get("profile", ""),
+            "Post Date (UTC)": row_data.get("post_date", ""),
+            "Shortcode": row_data.get("shortcode", ""),
+            "Media Type": media_type,
+            "Media File Path": media_path,
+            "Embedded Image": "",
+            "OCR Text from Image": ocr_text,
+            "Scraped At": row_data.get("scraped_at", ""),
+        }
+
+        for header, val in row_values.items():
+            col_idx = header_index.get(header)
+            if not col_idx:
+                continue
             cell = ws.cell(row=next_row, column=col_idx, value=val)
             cell.alignment = Alignment(vertical="top", wrap_text=True)
             cell.border = THIN_BORDER
@@ -263,13 +759,17 @@ def append_post_to_excel(excel_path: str, row_data: dict, media_files: list[dict
                     img = XlImage(thumb_path)
                     img.width = 120
                     img.height = 120
-                    cell_ref = f"G{next_row}"
+                    cell_ref = f"{get_column_letter(embedded_col_idx)}{next_row}"
                     ws.add_image(img, cell_ref)
                     ws.row_dimensions[next_row].height = 100
                 except Exception as e:
                     print(f"  [!] Could not embed image: {e}")
         else:
-            ws.cell(row=next_row, column=7, value=f"[Video: {Path(media_path).name}]")
+            ws.cell(
+                row=next_row,
+                column=embedded_col_idx,
+                value=f"[Video: {Path(media_path).name}]",
+            )
 
     wb.save(excel_path)
     print(f"  [Excel] Saved to {excel_path}")
@@ -280,6 +780,19 @@ def wait_with_jitter(base_seconds: float, jitter: float = 0.5):
     """Sleep for base_seconds +/- jitter fraction."""
     actual = base_seconds * (1 + random.uniform(-jitter, jitter))
     time.sleep(max(1, actual))
+
+
+def is_login_session_error(error: Exception) -> bool:
+    message = str(error).lower()
+    markers = (
+        "login_required",
+        "challenge_required",
+        "checkpoint_required",
+        "please wait a few minutes",
+        "badpassword",
+        "consent_required",
+    )
+    return any(marker in message for marker in markers)
 
 
 def scrape_profile_in_range(cl, username: str,
@@ -304,6 +817,7 @@ def scrape_profile_in_range(cl, username: str,
         log(f"Checking @{username} ({user_info.media_count} total posts)...")
 
         end_cursor = ""
+        first_page = True  # Instagram returns pinned posts (out-of-order) on the first page only
         while True:
             medias, end_cursor = cl.user_medias_paginated(user_id, 20, end_cursor=end_cursor)
 
@@ -312,6 +826,11 @@ def scrape_profile_in_range(cl, username: str,
 
             reached_older = False
             for media in medias:
+                if is_carousel_media(media):
+                    code = media.code or str(getattr(media, "pk", ""))
+                    log(f"  Skipping carousel post: {code}")
+                    continue
+
                 post_date = media.taken_at
                 if post_date.tzinfo is None:
                     post_date = post_date.replace(tzinfo=timezone.utc)
@@ -320,6 +839,10 @@ def scrape_profile_in_range(cl, username: str,
                     continue
 
                 if post_date < date_from:
+                    if first_page:
+                        # Pinned posts appear out-of-order at the top of the first page.
+                        # Skip them without stopping pagination so we still reach recent posts.
+                        continue
                     reached_older = True
                     break
 
@@ -327,6 +850,10 @@ def scrape_profile_in_range(cl, username: str,
                 log(f"  Found: {code} ({post_date.strftime('%Y-%m-%d %H:%M:%S')})")
 
                 media_files = download_post_media(cl, media, media_folder)
+                if not media_files:
+                    log(f"  Skipping post with no downloadable media: {code}")
+                    continue
+
                 caption = media.caption_text or ""
                 row_data = {
                     "profile": username,
@@ -340,6 +867,8 @@ def scrape_profile_in_range(cl, username: str,
                 count += 1
                 log(f"  Saved post {count}: {code}")
 
+            first_page = False
+
             if reached_older or not end_cursor:
                 break
 
@@ -347,6 +876,8 @@ def scrape_profile_in_range(cl, username: str,
 
     except Exception as e:
         log(f"Error for @{username}: {e}")
+        if is_login_session_error(e):
+            raise RuntimeError(str(e)) from e
 
     return count
 
@@ -367,10 +898,21 @@ def monitor_profile(cl, username: str, seen: set,
             if post_id in seen:
                 break
 
+            if is_carousel_media(media):
+                code = media.code or post_id
+                print(f"  [*] Skipping carousel post: {code}")
+                seen.add(post_id)
+                continue
+
             code = media.code
             print(f"  [+] New post: {code} ({media.taken_at})")
 
             media_files = download_post_media(cl, media, media_folder)
+            if not media_files:
+                print(f"  [*] Skipping post with no downloadable media: {code}")
+                seen.add(post_id)
+                continue
+
             caption = media.caption_text or ""
             row_data = {
                 "profile": username,

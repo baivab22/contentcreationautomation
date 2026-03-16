@@ -11,7 +11,7 @@ import mimetypes
 import os
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from collections import deque
 
@@ -61,6 +61,7 @@ INSTAGRAM_MAX_ASPECT_RATIO = 1.91
 INSTAGRAM_MAX_WIDTH = 1080
 INSTAGRAM_MAX_HEIGHT = 1350
 INSTAGRAM_MAX_CAPTION_LENGTH = 2200
+FETCH_EXPORTS_DIR = BASE_DIR / "fetch_exports"
 
 _publish_lock = threading.Lock()
 _instagram_upload_lock = threading.Lock()
@@ -132,6 +133,156 @@ def new_job_id():
         return f"job-{_job_counter}"
 
 
+def get_enabled_profile_usernames():
+    config = get_config()
+    return [
+        p["username"] for p in config.get("profiles", [])
+        if p.get("username") and p.get("enabled")
+    ]
+
+
+def get_excel_reference(excel_path: Path) -> str:
+    try:
+        return excel_path.resolve().relative_to(BASE_DIR.resolve()).as_posix()
+    except ValueError:
+        return excel_path.name
+
+
+def resolve_excel_path(file_ref: str | None) -> Path:
+    if not file_ref:
+        config = get_config()
+        return (BASE_DIR / config.get("excel_file", "instagram_posts.xlsx")).resolve()
+
+    candidate = Path(file_ref.strip())
+    if candidate.is_absolute():
+        raise ValueError("Absolute file paths are not allowed")
+
+    resolved = (BASE_DIR / candidate).resolve()
+    if not resolved.is_relative_to(BASE_DIR.resolve()):
+        raise ValueError("Invalid Excel file path")
+    if resolved.suffix.lower() != ".xlsx":
+        raise ValueError("Only .xlsx files are supported")
+    return resolved
+
+
+def build_recent_fetch_excel_path(hours: int) -> Path:
+    FETCH_EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    return FETCH_EXPORTS_DIR / f"recent_{hours}h_{stamp}.xlsx"
+
+
+def create_scrape_job(selected_profiles, date_from: datetime, date_to: datetime,
+                      excel_path: Path, job_label: str, fresh_output: bool = False):
+    excel_path = excel_path.resolve()
+    excel_path.parent.mkdir(parents=True, exist_ok=True)
+    excel_ref = get_excel_reference(excel_path)
+
+    job_id = new_job_id()
+    _jobs[job_id] = {
+        "status": "running",
+        "logs": deque(maxlen=500),
+        "total_profiles": len(selected_profiles),
+        "profiles_done": 0,
+        "posts_found": 0,
+        "current_profile": "",
+        "excel_file": excel_ref,
+        "job_label": job_label,
+    }
+
+    def run_job():
+        config = get_config()
+        media_folder = BASE_DIR / config.get("media_folder", "downloaded_media")
+        media_folder.mkdir(exist_ok=True)
+
+        if fresh_output and excel_path.exists():
+            try:
+                excel_path.unlink()
+                job = _jobs[job_id]
+                job["logs"].append("Previous export file cleared. Starting fresh output.")
+            except Exception as e:
+                job = _jobs[job_id]
+                job["logs"].append(f"Could not clear old export file: {e}")
+
+        get_or_create_workbook(str(excel_path))
+
+        job = _jobs[job_id]
+
+        try:
+            L = get_instaloader()
+        except Exception as e:
+            job["logs"].append(f"Login failed: {e}")
+            job["status"] = "error"
+            return
+
+        for i, username in enumerate(selected_profiles):
+            job["current_profile"] = username
+            job["logs"].append(f"--- Starting @{username} ({i+1}/{len(selected_profiles)}) ---")
+
+            def progress_cb(msg):
+                job["logs"].append(msg)
+
+            relogin_attempted = False
+            while True:
+                try:
+                    count = scrape_profile_in_range(
+                        L, username, date_from, date_to,
+                        str(excel_path), media_folder, progress_cb=progress_cb
+                    )
+                    job["posts_found"] += count
+                    job["logs"].append(f"@{username}: {count} posts scraped")
+                    break
+                except Exception as e:
+                    if is_challenge_error(e):
+                        job["logs"].append(
+                            f"Instagram requires manual verification. "
+                            "Please open the Instagram app or instagram.com, approve the "
+                            "security check for the scraper account, then try again."
+                        )
+                        job["status"] = "error"
+                        return
+                    if (not relogin_attempted) and is_retryable_instagram_error(e):
+                        relogin_attempted = True
+                        job["logs"].append(
+                            "Session issue detected. Re-authenticating and retrying this profile once..."
+                        )
+                        try:
+                            reset_instagram_loader()
+                            L = get_instaloader()
+                            job["logs"].append("Re-authentication successful. Retrying now...")
+                            continue
+                        except Exception as relogin_error:
+                            if is_challenge_error(relogin_error):
+                                job["logs"].append(
+                                    "Instagram requires manual verification. "
+                                    "Please open the Instagram app or instagram.com, approve the "
+                                    "security check for the scraper account, then try again."
+                                )
+                                job["status"] = "error"
+                                return
+                            job["logs"].append(f"Re-authentication failed: {relogin_error}")
+
+                    job["logs"].append(f"Error for @{username}: {e}")
+                    break
+
+            job["profiles_done"] = i + 1
+
+            if i < len(selected_profiles) - 1:
+                import random
+                delay = random.randint(15, 30)
+                job["logs"].append(f"Waiting {delay}s before next profile...")
+                time.sleep(delay)
+
+        job["status"] = "completed"
+        job["current_profile"] = ""
+        job["logs"].append(f"=== Done! {job['posts_found']} total posts scraped ===")
+        job["logs"].append(f"Output Excel: {excel_ref}")
+
+    thread = threading.Thread(target=run_job, daemon=True)
+    thread.start()
+
+    return job_id, excel_ref
+
+
 def utc_now_text():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
@@ -153,13 +304,25 @@ def normalize_instagram_caption(caption: str) -> str:
     return cleaned[:INSTAGRAM_MAX_CAPTION_LENGTH]
 
 
+def is_challenge_error(error: Exception) -> bool:
+    """Errors that require manual human verification — must NOT be auto-retried."""
+    msg = str(error).lower()
+    name = type(error).__name__.lower()
+    return (
+        "challengeunknownstep" in name
+        or "challenge" in msg
+        or "checkpoint" in msg
+        or "manual verification" in msg
+    )
+
+
 def is_retryable_instagram_error(error: Exception) -> bool:
+    if is_challenge_error(error):
+        return False  # challenge errors need manual action, never auto-retry
     message = str(error).lower()
     markers = (
         "login_required",
         "badpassword",
-        "challenge_required",
-        "checkpoint_required",
         "please wait a few minutes",
         "feedback_required",
         "sentry_block",
@@ -538,7 +701,7 @@ def index():
 @app.route("/api/scrape", methods=["POST"])
 def api_scrape():
     """Start a scraping job for selected profiles within a time range."""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     if not data:
         return jsonify({"error": "No JSON data provided"}), 400
 
@@ -561,66 +724,56 @@ def api_scrape():
     if date_from > date_to:
         return jsonify({"error": "date_from must be before date_to"}), 400
 
-    job_id = new_job_id()
-    _jobs[job_id] = {
-        "status": "running",
-        "logs": deque(maxlen=500),
-        "total_profiles": len(selected_profiles),
-        "profiles_done": 0,
-        "posts_found": 0,
-        "current_profile": "",
-    }
+    excel_path = resolve_excel_path(None)
+    job_id, excel_ref = create_scrape_job(
+        selected_profiles,
+        date_from,
+        date_to,
+        excel_path=excel_path,
+        job_label="custom-range",
+        fresh_output=True,
+    )
 
-    def run_job():
-        config = get_config()
-        excel_path = str(BASE_DIR / config.get("excel_file", "instagram_posts.xlsx"))
-        media_folder = BASE_DIR / config.get("media_folder", "downloaded_media")
-        media_folder.mkdir(exist_ok=True)
-        get_or_create_workbook(excel_path)
+    return jsonify({"job_id": job_id, "status": "started", "excel_file": excel_ref})
 
-        job = _jobs[job_id]
 
-        try:
-            L = get_instaloader()
-        except Exception as e:
-            job["logs"].append(f"Login failed: {e}")
-            job["status"] = "error"
-            return
+@app.route("/api/fetch/recent", methods=["POST"])
+def api_fetch_recent():
+    """Fetch recent posts for all listed (enabled) accounts into a fresh Excel file."""
+    data = request.get_json(silent=True) or {}
 
-        for i, username in enumerate(selected_profiles):
-            job["current_profile"] = username
-            job["logs"].append(f"--- Starting @{username} ({i+1}/{len(selected_profiles)}) ---")
+    try:
+        hours = int(data.get("hours", 1))
+    except (TypeError, ValueError):
+        return jsonify({"error": "hours must be an integer"}), 400
 
-            def progress_cb(msg):
-                job["logs"].append(msg)
+    if hours < 1 or hours > 168:
+        return jsonify({"error": "hours must be between 1 and 168"}), 400
 
-            try:
-                count = scrape_profile_in_range(
-                    L, username, date_from, date_to,
-                    excel_path, media_folder, progress_cb=progress_cb
-                )
-                job["posts_found"] += count
-                job["logs"].append(f"@{username}: {count} posts scraped")
-            except Exception as e:
-                job["logs"].append(f"Error for @{username}: {e}")
+    selected_profiles = get_enabled_profile_usernames()
+    if not selected_profiles:
+        return jsonify({"error": "No enabled profiles available in config"}), 400
 
-            job["profiles_done"] = i + 1
+    date_to = datetime.now(timezone.utc)
+    date_from = date_to - timedelta(hours=hours)
+    excel_path = build_recent_fetch_excel_path(hours)
 
-            # Delay between profiles
-            if i < len(selected_profiles) - 1:
-                import random
-                delay = random.randint(15, 30)
-                job["logs"].append(f"Waiting {delay}s before next profile...")
-                time.sleep(delay)
+    job_id, excel_ref = create_scrape_job(
+        selected_profiles,
+        date_from,
+        date_to,
+        excel_path=excel_path,
+        job_label=f"recent-{hours}h-all",
+        fresh_output=True,
+    )
 
-        job["status"] = "completed"
-        job["current_profile"] = ""
-        job["logs"].append(f"=== Done! {job['posts_found']} total posts scraped ===")
-
-    thread = threading.Thread(target=run_job, daemon=True)
-    thread.start()
-
-    return jsonify({"job_id": job_id, "status": "started"})
+    return jsonify({
+        "job_id": job_id,
+        "status": "started",
+        "hours": hours,
+        "profiles": len(selected_profiles),
+        "excel_file": excel_ref,
+    })
 
 
 @app.route("/api/job/<job_id>")
@@ -637,6 +790,8 @@ def api_job_status(job_id):
         "profiles_done": job["profiles_done"],
         "posts_found": job["posts_found"],
         "current_profile": job["current_profile"],
+        "excel_file": job.get("excel_file", ""),
+        "job_label": job.get("job_label", ""),
     })
 
 
@@ -651,21 +806,26 @@ def api_profiles():
 @app.route("/api/excel-info")
 def api_excel_info():
     """Get info about current Excel file."""
-    config = get_config()
-    excel_path = str(BASE_DIR / config.get("excel_file", "instagram_posts.xlsx"))
+    file_ref = (request.args.get("file") or "").strip()
+    try:
+        excel_path = resolve_excel_path(file_ref or None)
+    except ValueError as e:
+        return jsonify({"exists": False, "rows": 0, "size_kb": 0, "error": str(e)}), 400
+
+    excel_ref = get_excel_reference(excel_path)
     if not os.path.exists(excel_path):
-        return jsonify({"exists": False, "rows": 0, "size_kb": 0})
+        return jsonify({"exists": False, "rows": 0, "size_kb": 0, "file": excel_ref})
 
     try:
         from openpyxl import load_workbook as _lw
-        wb = _lw(excel_path)
+        wb = _lw(str(excel_path))
         ws = wb.active
         rows = max(0, ws.max_row - 1)
     except Exception:
         rows = 0
 
-    size_kb = round(os.path.getsize(excel_path) / 1024, 1)
-    return jsonify({"exists": True, "rows": rows, "size_kb": size_kb})
+    size_kb = round(os.path.getsize(str(excel_path)) / 1024, 1)
+    return jsonify({"exists": True, "rows": rows, "size_kb": size_kb, "file": excel_ref})
 
 
 @app.route("/api/publisher/items")
@@ -797,28 +957,39 @@ def api_publisher_post():
 @app.route("/download")
 def download_excel():
     """Download the Excel file."""
-    config = get_config()
-    excel_path = str(BASE_DIR / config.get("excel_file", "instagram_posts.xlsx"))
+    file_ref = (request.args.get("file") or "").strip()
+    try:
+        excel_path = resolve_excel_path(file_ref or None)
+    except ValueError as e:
+        return str(e), 400
+
     if not os.path.exists(excel_path):
         return "No Excel file yet. Run a scrape first.", 404
-    return send_file(excel_path, as_attachment=True,
-                     download_name="instagram_posts.xlsx")
+
+    download_name = excel_path.name if file_ref else "instagram_posts.xlsx"
+    return send_file(str(excel_path), as_attachment=True,
+                     download_name=download_name)
 
 
 @app.route("/api/excel-data")
 def api_excel_data():
     """Return Excel rows as JSON for the data table preview."""
-    config = get_config()
-    excel_path = str(BASE_DIR / config.get("excel_file", "instagram_posts.xlsx"))
+    file_ref = (request.args.get("file") or "").strip()
+    try:
+        excel_path = resolve_excel_path(file_ref or None)
+    except ValueError as e:
+        return jsonify({"rows": [], "total": 0, "error": str(e)}), 400
+
+    excel_ref = get_excel_reference(excel_path)
     if not os.path.exists(excel_path):
-        return jsonify({"rows": [], "total": 0})
+        return jsonify({"rows": [], "total": 0, "file": excel_ref})
 
     page = max(1, request.args.get("page", 1, type=int))
     per_page = min(100, max(1, request.args.get("per_page", 25, type=int)))
 
     try:
         from openpyxl import load_workbook as _lw
-        wb = _lw(excel_path)
+        wb = _lw(str(excel_path))
         ws = wb.active
         total_rows = max(0, ws.max_row - 1)
 
@@ -836,9 +1007,15 @@ def api_excel_data():
                     row_data[header] = str(val) if val is not None else ""
             rows.append(row_data)
 
-        return jsonify({"rows": rows, "total": total_rows, "page": page, "per_page": per_page})
+        return jsonify({
+            "rows": rows,
+            "total": total_rows,
+            "page": page,
+            "per_page": per_page,
+            "file": excel_ref,
+        })
     except Exception as e:
-        return jsonify({"rows": [], "total": 0, "error": str(e)})
+        return jsonify({"rows": [], "total": 0, "error": str(e), "file": excel_ref})
 
 
 @app.route("/media/<path:filename>")

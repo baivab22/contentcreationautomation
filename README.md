@@ -8,6 +8,14 @@ python app.py
 
 Open `http://localhost:5001`.
 
+## Quick Recent Fetch (1h For All Accounts)
+
+- In the **Time Range** card, click `1h (all)` (button shown before `24h`).
+- This runs fetch for all listed enabled accounts in your config.
+- The app creates a brand-new Excel file for that run only under `fetch_exports/`.
+- The table preview and download buttons automatically switch to that run file after completion.
+- Default date-range scraping still writes to the main `instagram_posts.xlsx` file.
+
 ## Confirm And Post Flow
 
 1. In the UI, use **Canva Drive Designs**.
@@ -40,3 +48,13 @@ Or fill the values in `config.json` under `publisher.facebook`.
 - The Confirm/Post gallery is sourced from Google Drive, not from scraped posts.
 - For PNG/WebP images, the app converts to JPG before Instagram upload.
 - Do not commit real credentials or tokens to git.
+
+## AI Caption/OCR Rewrite
+
+During scraping, each saved row now also includes:
+
+- `generate caption/description`: SEO-focused rewritten caption with hashtags
+- `newOcrText`: rewritten OCR text in better wording
+- `postTItle`: concise meaningful title from rewritten content
+
+OpenRouter settings are read from `config.json -> ai.openrouter` (or env vars `OPENROUTER_API_KEY` and `OPENROUTER_MODEL`).
