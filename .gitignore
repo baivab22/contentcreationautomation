@@ -13,6 +13,7 @@ instagram_posts.xlsx
 seen_posts.json
 publish_state.json
 tmp_publish/
+fetch_exports/*.xlsx
 
 # Python
 __pycache__/
