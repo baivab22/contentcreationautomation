@@ -38,6 +38,64 @@ with open(output_file, "wb") as f:
 PY
 }
 
+write_fallback_config() {
+        cat > config.json <<'JSON'
+{
+    "instagram_credentials": {
+        "username": "",
+        "password": ""
+    },
+    "profiles": [],
+    "monitor_interval_seconds": 300,
+    "download_media": false,
+    "excel_file": "instagram_posts.xlsx",
+    "media_folder": "downloaded_media",
+    "ai": {
+        "openrouter": {
+            "api_key": "",
+            "model": "deepseek/deepseek-r1",
+            "prompt": "",
+            "timeout_seconds": 90,
+            "temperature": 0.5
+        }
+    },
+    "publisher": {
+        "drive": {
+            "folder_id": "",
+            "credentials_file": "secrets/ornate-grail-490114-f2-ad44024874d8.json"
+        },
+        "sheets": {
+            "enabled": true,
+            "spreadsheet_id": "",
+            "worksheet_name": "Instagram Posts",
+            "credentials_file": "secrets/autoscraper-489906-6efe766866da.json"
+        },
+        "facebook": {
+            "page_id": "",
+            "access_token": "",
+            "api_version": "v22.0"
+        }
+    }
+}
+JSON
+}
+
+validate_json_file() {
+        local file_path="$1"
+        python - "$file_path" <<'PY'
+import json
+import sys
+
+file_path = sys.argv[1]
+try:
+        with open(file_path, "r", encoding="utf-8") as f:
+                json.load(f)
+except Exception as exc:
+        print(f"ERROR: Invalid JSON in {file_path}: {exc}", file=sys.stderr)
+        sys.exit(1)
+PY
+}
+
 # Write config.json from env var.
 # Preferred: base64-encoded full JSON  (APP_CONFIG_JSON_B64)
 # Fallback : raw JSON string           (APP_CONFIG_JSON)
@@ -49,46 +107,13 @@ elif [[ -n "${APP_CONFIG_JSON:-}" ]]; then
 elif [[ -f config.json ]]; then
     echo "config.json already present"
 else
-    cat > config.json <<'JSON'
-{
-  "instagram_credentials": {
-    "username": "",
-    "password": ""
-  },
-  "profiles": [],
-  "monitor_interval_seconds": 300,
-  "download_media": false,
-  "excel_file": "instagram_posts.xlsx",
-  "media_folder": "downloaded_media",
-  "ai": {
-    "openrouter": {
-      "api_key": "",
-      "model": "deepseek/deepseek-r1",
-      "prompt": "",
-      "timeout_seconds": 90,
-      "temperature": 0.5
-    }
-  },
-  "publisher": {
-    "drive": {
-      "folder_id": "",
-      "credentials_file": "secrets/ornate-grail-490114-f2-ad44024874d8.json"
-    },
-    "sheets": {
-      "enabled": true,
-      "spreadsheet_id": "",
-      "worksheet_name": "Instagram Posts",
-      "credentials_file": "secrets/autoscraper-489906-6efe766866da.json"
-    },
-    "facebook": {
-      "page_id": "",
-      "access_token": "",
-      "api_version": "v22.0"
-    }
-  }
-}
-JSON
+        write_fallback_config
     echo "WARNING: No config env found. Started with a minimal fallback config."
+fi
+
+if ! validate_json_file "config.json"; then
+        echo "WARNING: Replacing malformed config.json with fallback defaults."
+        write_fallback_config
 fi
 
 # Write Google Sheets service-account key.

@@ -72,11 +72,102 @@ _sheets_service_cache = None
 _sheets_service_identity = None
 _sheets_ready_targets: set[tuple[str, str]] = set()
 _sheets_warned_keys: set[str] = set()
+_config_warn_lock = threading.Lock()
+_config_warned = False
 
 # ─── Load config ──────────────────────────────────────────────────────────────
+def _default_config() -> dict:
+    return {
+        "instagram_credentials": {"username": "", "password": ""},
+        "profiles": [],
+        "monitor_interval_seconds": 300,
+        "download_media": False,
+        "excel_file": "instagram_posts.xlsx",
+        "media_folder": "downloaded_media",
+        "ai": {
+            "openrouter": {
+                "api_key": "",
+                "model": DEFAULT_OPENROUTER_MODEL,
+                "prompt": DEFAULT_OPENROUTER_PROMPT,
+                "timeout_seconds": 90,
+                "temperature": 0.5,
+            }
+        },
+        "publisher": {
+            "drive": {
+                "folder_id": "",
+                "credentials_file": "secrets/ornate-grail-490114-f2-ad44024874d8.json",
+            },
+            "sheets": {
+                "enabled": True,
+                "spreadsheet_id": "",
+                "worksheet_name": DEFAULT_SHEETS_WORKSHEET,
+                "credentials_file": "secrets/autoscraper-489906-6efe766866da.json",
+            },
+            "facebook": {
+                "page_id": "",
+                "access_token": "",
+                "api_version": "v22.0",
+            },
+        },
+    }
+
+
+def _warn_config_once(message: str):
+    global _config_warned
+    with _config_warn_lock:
+        if _config_warned:
+            return
+        _config_warned = True
+    print(message)
+
+
 def load_config():
-    with open(CONFIG_FILE, "r") as f:
-        return json.load(f)
+    fallback = _default_config()
+
+    try:
+        with open(CONFIG_FILE, "r") as f:
+            data = json.load(f)
+    except Exception as e:
+        _warn_config_once(
+            f"[Config] Failed to load {CONFIG_FILE}: {e}. Using fallback defaults."
+        )
+        return fallback
+
+    if not isinstance(data, dict):
+        _warn_config_once(
+            f"[Config] Invalid config root type ({type(data).__name__}). "
+            "Using fallback defaults."
+        )
+        return fallback
+
+    # Fill required keys so API routes can keep responding even if config is partial.
+    data.setdefault("instagram_credentials", fallback["instagram_credentials"])
+    data.setdefault("profiles", fallback["profiles"])
+    data.setdefault("monitor_interval_seconds", fallback["monitor_interval_seconds"])
+    data.setdefault("download_media", fallback["download_media"])
+    data.setdefault("excel_file", fallback["excel_file"])
+    data.setdefault("media_folder", fallback["media_folder"])
+
+    ai_cfg = data.setdefault("ai", {})
+    ai_openrouter = ai_cfg.setdefault("openrouter", {})
+    for key, value in fallback["ai"]["openrouter"].items():
+        ai_openrouter.setdefault(key, value)
+
+    publisher = data.setdefault("publisher", {})
+    drive_cfg = publisher.setdefault("drive", {})
+    for key, value in fallback["publisher"]["drive"].items():
+        drive_cfg.setdefault(key, value)
+
+    sheets_cfg = publisher.setdefault("sheets", {})
+    for key, value in fallback["publisher"]["sheets"].items():
+        sheets_cfg.setdefault(key, value)
+
+    facebook_cfg = publisher.setdefault("facebook", {})
+    for key, value in fallback["publisher"]["facebook"].items():
+        facebook_cfg.setdefault(key, value)
+
+    return data
 
 
 def _as_bool(value, default=False):
