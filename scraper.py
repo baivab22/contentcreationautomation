@@ -172,11 +172,32 @@ def load_config():
 
 
 def load_service_account_info_from_env(raw_env_names, b64_env_names):
-    for env_name in b64_env_names:
+    ordered_env_names = []
+    seen = set()
+
+    for env_name in (*b64_env_names, *raw_env_names):
+        if env_name in seen:
+            continue
+        seen.add(env_name)
+        ordered_env_names.append(env_name)
+
+    for env_name in ordered_env_names:
         raw_value = os.getenv(env_name, "")
         if not raw_value:
             continue
 
+        # First, try parsing as plain JSON. This supports raw JSON being pasted
+        # into either the *_JSON or *_JSON_B64 variable by mistake.
+        try:
+            data = json.loads(raw_value)
+        except Exception:
+            data = None
+
+        if isinstance(data, dict):
+            return data, env_name
+
+        # Then try base64-decoding and parsing the decoded JSON. This supports
+        # base64 content being pasted into either env-var name by mistake.
         compact = "".join(raw_value.strip().split())
         if compact.endswith("%"):
             compact = compact[:-1]
@@ -185,20 +206,7 @@ def load_service_account_info_from_env(raw_env_names, b64_env_names):
             decoded = base64.b64decode(compact, validate=False)
             data = json.loads(decoded.decode("utf-8"))
         except Exception:
-            continue
-
-        if isinstance(data, dict):
-            return data, env_name
-
-    for env_name in raw_env_names:
-        raw_value = os.getenv(env_name, "")
-        if not raw_value:
-            continue
-
-        try:
-            data = json.loads(raw_value)
-        except Exception:
-            continue
+            data = None
 
         if isinstance(data, dict):
             return data, env_name
