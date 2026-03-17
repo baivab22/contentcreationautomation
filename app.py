@@ -481,29 +481,63 @@ def get_publisher_config():
     config = get_config()
     publisher = config.get("publisher", {})
     drive_cfg = publisher.get("drive", {})
+    sheets_cfg = publisher.get("sheets", {})
     return {
         "drive": {
             "folder_id": os.getenv("CANVA_DRIVE_FOLDER_ID") or drive_cfg.get("folder_id") or DEFAULT_CANVA_DRIVE_FOLDER_ID,
-            "credentials_file": os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE") or drive_cfg.get("credentials_file") or find_default_service_account_file(),
+            # Drive can safely reuse the Sheets service account JSON if needed.
+            "credentials_file": (
+                os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE")
+                or drive_cfg.get("credentials_file")
+                or os.getenv("GOOGLE_SHEETS_SERVICE_ACCOUNT_FILE")
+                or sheets_cfg.get("credentials_file")
+                or find_default_service_account_file()
+            ),
         },
         "facebook": publisher.get("facebook", {}),
     }
 
 
 def get_drive_credentials_path() -> Path:
-    credentials_file = get_publisher_config().get("drive", {}).get("credentials_file", "")
-    if not credentials_file:
-        raise RuntimeError("Google Drive service account file is not configured.")
+    config = get_config()
+    publisher = config.get("publisher", {})
+    drive_cfg = publisher.get("drive", {})
+    sheets_cfg = publisher.get("sheets", {})
 
-    candidate = Path(credentials_file)
-    if not candidate.is_absolute():
-        candidate = BASE_DIR / candidate
+    raw_candidates = [
+        os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", "").strip(),
+        str(drive_cfg.get("credentials_file") or "").strip(),
+        os.getenv("GOOGLE_SHEETS_SERVICE_ACCOUNT_FILE", "").strip(),
+        str(sheets_cfg.get("credentials_file") or "").strip(),
+        find_default_service_account_file().strip(),
+    ]
 
-    candidate = candidate.resolve()
-    if not candidate.exists() or not candidate.is_file():
-        raise RuntimeError(f"Google Drive credentials file not found: {candidate}")
+    checked_paths = []
+    seen = set()
+    for raw_path in raw_candidates:
+        if not raw_path or raw_path in seen:
+            continue
+        seen.add(raw_path)
 
-    return candidate
+        candidate = Path(raw_path)
+        if not candidate.is_absolute():
+            candidate = BASE_DIR / candidate
+
+        candidate = candidate.resolve()
+        checked_paths.append(str(candidate))
+        if candidate.exists() and candidate.is_file():
+            return candidate
+
+    if not checked_paths:
+        raise RuntimeError(
+            "Google Drive service account file is not configured. "
+            "Set GOOGLE_DRIVE_CREDS_JSON_B64 or GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE."
+        )
+
+    raise RuntimeError(
+        "Google Drive credentials file not found. Checked: "
+        + ", ".join(checked_paths)
+    )
 
 
 def get_canva_drive_folder_id() -> str:
@@ -524,7 +558,8 @@ def get_drive_service():
     except Exception as e:
         raise RuntimeError(
             "Google Drive service account JSON is invalid or empty. "
-            "Set GOOGLE_DRIVE_CREDS_JSON in Render to a valid JSON key file."
+            "Set GOOGLE_DRIVE_CREDS_JSON_B64 (preferred) or GOOGLE_DRIVE_CREDS_JSON "
+            "in Render to a valid JSON key file."
         ) from e
     return build("drive", "v3", credentials=creds, cache_discovery=False)
 
