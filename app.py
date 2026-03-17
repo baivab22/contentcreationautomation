@@ -2,7 +2,7 @@
 """
 Flask Web UI for Instagram Profile Monitor
 Run: python app.py
-Open: http://localhost:5000
+Open: http://localhost:5001
 """
 
 import json
@@ -65,6 +65,10 @@ FETCH_EXPORTS_DIR = BASE_DIR / "fetch_exports"
 
 _publish_lock = threading.Lock()
 _instagram_upload_lock = threading.Lock()
+_scrape_runtime_lock = threading.Lock()
+_monitor_thread = None
+_monitor_lock = threading.Lock()
+_monitor_stop_event = threading.Event()
 
 
 def _load_publish_state():
@@ -193,6 +197,7 @@ def create_scrape_job(selected_profiles, date_from: datetime, date_to: datetime,
         config = get_config()
         media_folder = BASE_DIR / config.get("media_folder", "downloaded_media")
         media_folder.mkdir(exist_ok=True)
+        download_enabled = bool(config.get("download_media", True))
 
         if fresh_output and excel_path.exists():
             try:
@@ -208,7 +213,8 @@ def create_scrape_job(selected_profiles, date_from: datetime, date_to: datetime,
         job = _jobs[job_id]
 
         try:
-            L = get_instaloader()
+            with _scrape_runtime_lock:
+                get_instaloader()
         except Exception as e:
             job["logs"].append(f"Login failed: {e}")
             job["status"] = "error"
@@ -224,10 +230,13 @@ def create_scrape_job(selected_profiles, date_from: datetime, date_to: datetime,
             relogin_attempted = False
             while True:
                 try:
-                    count = scrape_profile_in_range(
-                        L, username, date_from, date_to,
-                        str(excel_path), media_folder, progress_cb=progress_cb
-                    )
+                    with _scrape_runtime_lock:
+                        L = get_instaloader()
+                        count = scrape_profile_in_range(
+                            L, username, date_from, date_to,
+                            str(excel_path), media_folder, progress_cb=progress_cb,
+                            download_enabled=download_enabled
+                        )
                     job["posts_found"] += count
                     job["logs"].append(f"@{username}: {count} posts scraped")
                     break
@@ -246,8 +255,9 @@ def create_scrape_job(selected_profiles, date_from: datetime, date_to: datetime,
                             "Session issue detected. Re-authenticating and retrying this profile once..."
                         )
                         try:
-                            reset_instagram_loader()
-                            L = get_instaloader()
+                            with _scrape_runtime_lock:
+                                reset_instagram_loader()
+                                get_instaloader()
                             job["logs"].append("Re-authentication successful. Retrying now...")
                             continue
                         except Exception as relogin_error:
@@ -297,6 +307,114 @@ def as_bool(value, default=False):
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on"}
     return default
+
+
+def should_run_background_monitor() -> bool:
+    env_value = os.getenv("ENABLE_BACKGROUND_MONITOR")
+    if env_value is None:
+        return True
+    return as_bool(env_value, default=True)
+
+
+def run_background_monitor_loop():
+    config = get_config()
+    excel_path = str(BASE_DIR / config.get("excel_file", "instagram_posts.xlsx"))
+    media_folder = BASE_DIR / config.get("media_folder", "downloaded_media")
+    media_folder.mkdir(exist_ok=True)
+    download_enabled = bool(config.get("download_media", True))
+    get_or_create_workbook(excel_path)
+
+    seen = load_seen_posts()
+    cycle = 0
+
+    print("[Monitor] Background monitoring enabled.")
+    print(f"[Monitor] Tracking {len(get_enabled_profile_usernames())} enabled profiles.")
+
+    while not _monitor_stop_event.is_set():
+        cycle += 1
+        profiles = get_enabled_profile_usernames()
+
+        total_new = 0
+        if not profiles:
+            print("[Monitor] No enabled profiles configured. Waiting for next cycle.")
+
+        for index, username in enumerate(profiles):
+            if _monitor_stop_event.is_set():
+                break
+
+            relogin_attempted = False
+            while True:
+                try:
+                    with _scrape_runtime_lock:
+                        L = get_instaloader()
+                        new_count = monitor_profile(
+                            L,
+                            username,
+                            seen,
+                            excel_path,
+                            media_folder,
+                            download_enabled=download_enabled,
+                        )
+
+                    total_new += new_count
+                    save_seen_posts(seen)
+                    break
+                except Exception as e:
+                    if is_challenge_error(e):
+                        print(
+                            "[Monitor] Instagram requires manual verification. "
+                            "Approve login in the app/web, then restart monitoring."
+                        )
+                        break
+
+                    if (not relogin_attempted) and is_retryable_instagram_error(e):
+                        relogin_attempted = True
+                        print(f"[Monitor] Session issue for @{username}. Re-authenticating once...")
+                        try:
+                            with _scrape_runtime_lock:
+                                reset_instagram_loader()
+                                get_instaloader()
+                            continue
+                        except Exception as relogin_error:
+                            print(f"[Monitor] Re-authentication failed for @{username}: {relogin_error}")
+
+                    print(f"[Monitor] Error for @{username}: {e}")
+                    break
+
+            if index < len(profiles) - 1 and not _monitor_stop_event.is_set():
+                wait_with_jitter(12, jitter=0.25)
+
+        save_seen_posts(seen)
+        interval = int(get_config().get("monitor_interval_seconds", 300))
+        print(
+            f"[Monitor] Cycle #{cycle} complete. New posts: {total_new}. "
+            f"Next cycle in {interval}s."
+        )
+
+        slept = 0
+        while slept < interval and not _monitor_stop_event.is_set():
+            time.sleep(1)
+            slept += 1
+
+
+def start_background_monitor():
+    global _monitor_thread
+
+    if not should_run_background_monitor():
+        print("[Monitor] Disabled via ENABLE_BACKGROUND_MONITOR.")
+        return
+
+    with _monitor_lock:
+        if _monitor_thread is not None and _monitor_thread.is_alive():
+            return
+
+        _monitor_stop_event.clear()
+        _monitor_thread = threading.Thread(
+            target=run_background_monitor_loop,
+            name="instagram-background-monitor",
+            daemon=True,
+        )
+        _monitor_thread.start()
 
 
 def normalize_instagram_caption(caption: str) -> str:
@@ -1056,4 +1174,6 @@ if __name__ == "__main__":
     print("  Instagram Monitor — Web UI")
     print("  Open http://localhost:5001")
     print("=" * 50)
-    app.run(host="0.0.0.0", port=5001, debug=False)
+    start_background_monitor()
+    app_port = int(os.getenv("PORT", "5001"))
+    app.run(host="0.0.0.0", port=app_port, debug=False)

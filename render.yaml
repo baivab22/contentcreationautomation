@@ -1,0 +1,29 @@
+# render.yaml – Render.com deployment config
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: instagram-scraper
+    runtime: python
+    region: oregon          # free-tier region (change to singapore/frankfurt if closer)
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: bash start.sh
+    healthCheckPath: /
+    envVars:
+      - key: PORT
+        value: "10000"      # Render always injects $PORT but this keeps it explicit
+      - key: ENABLE_BACKGROUND_MONITOR
+        value: "true"
+      - key: GOOGLE_SHEETS_SPREADSHEET_ID
+        value: "1NHvLYa061gt7fnC-igVPd831BQ9lV_MH9_-AVKpUTYc"
+      # ── Paste in the Render dashboard (mark as Secret) ──────────────────────
+      - key: APP_CONFIG_JSON_B64
+        sync: false         # secret – fill in dashboard, not here
+      - key: GOOGLE_SHEETS_CREDS_JSON
+        sync: false
+      - key: GOOGLE_DRIVE_CREDS_JSON
+        sync: false
+      - key: IG_SESSION_FILE_B64
+        sync: false         # optional but avoids challenge on cold start
+      - key: IG_SESSION_JSON_B64
+        sync: false

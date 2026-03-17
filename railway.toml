@@ -1,0 +1,10 @@
+# railway.toml – Railway deployment config
+# Docs: https://docs.railway.app/reference/config-as-code
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "bash start.sh"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 5

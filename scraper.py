@@ -35,6 +35,13 @@ try:
 except ImportError:
     HAS_TESSERACT = False
 
+try:
+    from google.oauth2 import service_account as google_service_account
+    from googleapiclient.discovery import build as google_build
+except ImportError:
+    google_service_account = None
+    google_build = None
+
 # ─── Paths ────────────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = BASE_DIR / "config.json"
@@ -54,10 +61,42 @@ _ai_cache_lock = threading.Lock()
 _ai_config_cache = None
 _ai_config_mtime = None
 
+# ─── Google Sheets export ───────────────────────────────────────────────────
+GOOGLE_SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
+DEFAULT_SHEETS_WORKSHEET = "Instagram Posts"
+
+_sheets_lock = threading.Lock()
+_sheets_config_cache = None
+_sheets_config_mtime = None
+_sheets_service_cache = None
+_sheets_service_identity = None
+_sheets_ready_targets: set[tuple[str, str]] = set()
+_sheets_warned_keys: set[str] = set()
+
 # ─── Load config ──────────────────────────────────────────────────────────────
 def load_config():
     with open(CONFIG_FILE, "r") as f:
         return json.load(f)
+
+
+def _as_bool(value, default=False):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return default
+
+
+def _warn_sheets_once(key: str, message: str):
+    with _sheets_lock:
+        if key in _sheets_warned_keys:
+            return
+        _sheets_warned_keys.add(key)
+    print(message)
 
 
 def _normalize_text(value: str, max_len: int | None = None) -> str:
@@ -228,6 +267,96 @@ def get_ai_rewrite_config():
         _ai_config_mtime = config_mtime
 
     return _ai_config_cache
+
+
+def get_google_sheets_config():
+    global _sheets_config_cache, _sheets_config_mtime
+
+    config_mtime = None
+    try:
+        config_mtime = CONFIG_FILE.stat().st_mtime
+    except FileNotFoundError:
+        pass
+
+    if _sheets_config_cache is None or _sheets_config_mtime != config_mtime:
+        config = load_config()
+        publisher_cfg = config.get("publisher", {})
+        sheets_cfg = publisher_cfg.get("sheets", {})
+        drive_cfg = publisher_cfg.get("drive", {})
+
+        env_enabled = os.getenv("GOOGLE_SHEETS_ENABLED")
+        enabled = (
+            _as_bool(env_enabled, default=False)
+            if env_enabled is not None
+            else _as_bool(sheets_cfg.get("enabled"), default=False)
+        )
+
+        _sheets_config_cache = {
+            "enabled": enabled,
+            "spreadsheet_id": (
+                os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID")
+                or sheets_cfg.get("spreadsheet_id")
+                or ""
+            ).strip(),
+            "worksheet_name": (
+                os.getenv("GOOGLE_SHEETS_WORKSHEET")
+                or sheets_cfg.get("worksheet_name")
+                or DEFAULT_SHEETS_WORKSHEET
+            ).strip() or DEFAULT_SHEETS_WORKSHEET,
+            "credentials_file": (
+                os.getenv("GOOGLE_SHEETS_SERVICE_ACCOUNT_FILE")
+                or sheets_cfg.get("credentials_file")
+                or drive_cfg.get("credentials_file")
+                or ""
+            ).strip(),
+        }
+        _sheets_config_mtime = config_mtime
+
+    return _sheets_config_cache
+
+
+def _resolve_credentials_file(path_value: str) -> Path:
+    if not path_value:
+        raise RuntimeError("Google Sheets credentials file is not configured")
+
+    candidate = Path(path_value)
+    if not candidate.is_absolute():
+        candidate = BASE_DIR / candidate
+
+    candidate = candidate.resolve()
+    if not candidate.exists() or not candidate.is_file():
+        raise RuntimeError(f"Google Sheets credentials file not found: {candidate}")
+
+    return candidate
+
+
+def _get_sheets_service(sheets_cfg: dict):
+    global _sheets_service_cache, _sheets_service_identity
+
+    if google_service_account is None or google_build is None:
+        raise RuntimeError(
+            "Google Sheets dependencies are missing. Install google-auth and "
+            "google-api-python-client in the active environment."
+        )
+
+    credentials_path = _resolve_credentials_file(sheets_cfg.get("credentials_file", ""))
+    identity = str(credentials_path)
+
+    with _sheets_lock:
+        if _sheets_service_cache is None or _sheets_service_identity != identity:
+            creds = google_service_account.Credentials.from_service_account_file(
+                str(credentials_path),
+                scopes=[GOOGLE_SHEETS_SCOPE],
+            )
+            _sheets_service_cache = google_build(
+                "sheets",
+                "v4",
+                credentials=creds,
+                cache_discovery=False,
+            )
+            _sheets_service_identity = identity
+
+    return _sheets_service_cache
 
 
 def rewrite_with_ai(caption: str, ocr_text: str, profile: str = "") -> dict:
@@ -511,8 +640,10 @@ def is_carousel_media(media: Media) -> bool:
     return False
 
 
-def download_post_media(cl, media: Media, media_folder: Path) -> list[dict]:
+def download_post_media(cl, media: Media, media_folder: Path, download_enabled: bool = True) -> list[dict]:
     """Download all media (images/videos) for a post. Returns list of {path, type}."""
+    if not download_enabled:
+        return []
     media_folder.mkdir(parents=True, exist_ok=True)
     media_files = []
 
@@ -557,6 +688,90 @@ HEADERS = [
     "OCR Text from Image",
     "Scraped At",
 ]
+
+
+def _sheet_name_literal(name: str) -> str:
+    return "'" + (name or DEFAULT_SHEETS_WORKSHEET).replace("'", "''") + "'"
+
+
+def _ensure_google_sheet_ready(service, spreadsheet_id: str, worksheet_name: str):
+    target = (spreadsheet_id, worksheet_name)
+    with _sheets_lock:
+        if target in _sheets_ready_targets:
+            return
+
+    metadata = service.spreadsheets().get(
+        spreadsheetId=spreadsheet_id,
+        fields="sheets(properties(title))",
+    ).execute()
+    existing_titles = {
+        (sheet.get("properties", {}) or {}).get("title", "")
+        for sheet in metadata.get("sheets", [])
+    }
+
+    if worksheet_name not in existing_titles:
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body={"requests": [{"addSheet": {"properties": {"title": worksheet_name}}}]},
+        ).execute()
+
+    header_last_col = get_column_letter(len(HEADERS))
+    header_range = f"{_sheet_name_literal(worksheet_name)}!A1:{header_last_col}1"
+    existing_header = service.spreadsheets().values().get(
+        spreadsheetId=spreadsheet_id,
+        range=header_range,
+    ).execute().get("values", [])
+
+    if not existing_header:
+        service.spreadsheets().values().update(
+            spreadsheetId=spreadsheet_id,
+            range=f"{_sheet_name_literal(worksheet_name)}!A1",
+            valueInputOption="RAW",
+            body={"values": [HEADERS]},
+        ).execute()
+
+    with _sheets_lock:
+        _sheets_ready_targets.add(target)
+
+
+def _to_sheet_row(row_values: dict) -> list:
+    return [row_values.get(header, "") for header in HEADERS]
+
+
+def append_rows_to_google_sheet(rows: list[dict]):
+    if not rows:
+        return
+
+    sheets_cfg = get_google_sheets_config()
+    if not sheets_cfg.get("enabled"):
+        return
+
+    spreadsheet_id = (sheets_cfg.get("spreadsheet_id") or "").strip()
+    worksheet_name = (sheets_cfg.get("worksheet_name") or DEFAULT_SHEETS_WORKSHEET).strip()
+
+    if not spreadsheet_id:
+        _warn_sheets_once(
+            "missing_spreadsheet_id",
+            "[Sheets] Missing spreadsheet_id. Set GOOGLE_SHEETS_SPREADSHEET_ID "
+            "or config.json -> publisher.sheets.spreadsheet_id",
+        )
+        return
+
+    try:
+        service = _get_sheets_service(sheets_cfg)
+        _ensure_google_sheet_ready(service, spreadsheet_id, worksheet_name)
+        service.spreadsheets().values().append(
+            spreadsheetId=spreadsheet_id,
+            range=f"{_sheet_name_literal(worksheet_name)}!A1",
+            valueInputOption="RAW",
+            insertDataOption="INSERT_ROWS",
+            body={"values": [_to_sheet_row(item) for item in rows]},
+        ).execute()
+    except Exception as e:
+        _warn_sheets_once(
+            f"append_failed:{type(e).__name__}",
+            f"[Sheets] Append failed: {e}",
+        )
 
 HEADER_WIDTHS = {
     "postlink": 42,
@@ -696,6 +911,7 @@ def append_post_to_excel(excel_path: str, row_data: dict, media_files: list[dict
     wb, ws = get_or_create_workbook(excel_path)
     header_index = _get_header_index_map(ws)
     embedded_col_idx = header_index.get("Embedded Image", 7)
+    rows_for_google_sheet = []
 
     for media in media_files:
         next_row = ws.max_row + 1
@@ -743,6 +959,7 @@ def append_post_to_excel(excel_path: str, row_data: dict, media_files: list[dict
             "OCR Text from Image": ocr_text,
             "Scraped At": row_data.get("scraped_at", ""),
         }
+        rows_for_google_sheet.append(row_values)
 
         for header, val in row_values.items():
             col_idx = header_index.get(header)
@@ -773,6 +990,7 @@ def append_post_to_excel(excel_path: str, row_data: dict, media_files: list[dict
 
     wb.save(excel_path)
     print(f"  [Excel] Saved to {excel_path}")
+    append_rows_to_google_sheet(rows_for_google_sheet)
 
 
 # ─── Profile scraping ────────────────────────────────────────────────────────
@@ -798,7 +1016,7 @@ def is_login_session_error(error: Exception) -> bool:
 def scrape_profile_in_range(cl, username: str,
                             date_from: datetime, date_to: datetime,
                             excel_path: str, media_folder: Path,
-                            progress_cb=None):
+                            progress_cb=None, download_enabled: bool = True):
     """
     Scrape posts from a profile within a date range using instagrapi.
     Uses user_medias_paginated — fetches ~20 posts per API call,
@@ -849,8 +1067,8 @@ def scrape_profile_in_range(cl, username: str,
                 code = media.code
                 log(f"  Found: {code} ({post_date.strftime('%Y-%m-%d %H:%M:%S')})")
 
-                media_files = download_post_media(cl, media, media_folder)
-                if not media_files:
+                media_files = download_post_media(cl, media, media_folder, download_enabled=download_enabled)
+                if download_enabled and not media_files:
                     log(f"  Skipping post with no downloadable media: {code}")
                     continue
 
@@ -883,7 +1101,8 @@ def scrape_profile_in_range(cl, username: str,
 
 
 def monitor_profile(cl, username: str, seen: set,
-                    excel_path: str, media_folder: Path, max_posts: int = 5):
+                    excel_path: str, media_folder: Path, max_posts: int = 5,
+                    download_enabled: bool = True):
     """Check a profile for new posts not yet in seen set."""
     new_count = 0
     try:
@@ -907,8 +1126,8 @@ def monitor_profile(cl, username: str, seen: set,
             code = media.code
             print(f"  [+] New post: {code} ({media.taken_at})")
 
-            media_files = download_post_media(cl, media, media_folder)
-            if not media_files:
+            media_files = download_post_media(cl, media, media_folder, download_enabled=download_enabled)
+            if download_enabled and not media_files:
                 print(f"  [*] Skipping post with no downloadable media: {code}")
                 seen.add(post_id)
                 continue
@@ -933,6 +1152,8 @@ def monitor_profile(cl, username: str, seen: set,
 
     except Exception as e:
         print(f"  [!] Error for @{username}: {e}")
+        if is_login_session_error(e):
+            raise RuntimeError(str(e)) from e
 
     return new_count
 
@@ -943,6 +1164,7 @@ def main():
     excel_path = str(BASE_DIR / config.get("excel_file", "instagram_posts.xlsx"))
     media_folder = BASE_DIR / config.get("media_folder", "downloaded_media")
     interval = config.get("monitor_interval_seconds", 300)
+    download_enabled = bool(config.get("download_media", True))
     media_folder.mkdir(exist_ok=True)
 
     profiles = [p["username"] for p in config["profiles"] if p.get("enabled") and p.get("username")]
@@ -972,12 +1194,28 @@ def main():
 
         total_new = 0
         for i, username in enumerate(profiles):
-            try:
-                new = monitor_profile(cl, username, seen, excel_path, media_folder)
-                total_new += new
-                save_seen_posts(seen)
-            except Exception as e:
-                print(f"[!] Error monitoring @{username}: {e}")
+            relogin_attempted = False
+            while True:
+                try:
+                    new = monitor_profile(cl, username, seen, excel_path, media_folder,
+                                         download_enabled=download_enabled)
+                    total_new += new
+                    save_seen_posts(seen)
+                    break
+                except Exception as e:
+                    if (not relogin_attempted) and is_login_session_error(e):
+                        relogin_attempted = True
+                        print("[!] Session issue detected. Re-authenticating and retrying once...")
+                        try:
+                            config = load_config()
+                            cl = get_loader(config)
+                            print("[+] Re-authentication successful. Retrying now...")
+                            continue
+                        except Exception as relogin_error:
+                            print(f"[!] Re-authentication failed: {relogin_error}")
+
+                    print(f"[!] Error monitoring @{username}: {e}")
+                    break
 
             delay = random.randint(15, 30)
             print(f"  [*] Waiting {delay}s before next profile...")

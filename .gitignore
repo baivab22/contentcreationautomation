@@ -18,9 +18,18 @@ tmp_publish/
 __pycache__/
 *.pyc
 .venv/
+.venv-1/
+*.venv*/
 
 # Backup
 scraper_old_instaloader.py
 
 # OS
 .DS_Store
+
+# Deployment files – these SHOULD be committed
+!start.sh
+!Procfile
+!render.yaml
+!railway.toml
+!runtime.txt
