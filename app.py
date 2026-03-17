@@ -515,10 +515,17 @@ def get_canva_drive_folder_id() -> str:
 
 def get_drive_service():
     require_drive_client()
-    creds = service_account.Credentials.from_service_account_file(
-        str(get_drive_credentials_path()),
-        scopes=["https://www.googleapis.com/auth/drive.readonly"],
-    )
+    credentials_path = get_drive_credentials_path()
+    try:
+        creds = service_account.Credentials.from_service_account_file(
+            str(credentials_path),
+            scopes=["https://www.googleapis.com/auth/drive.readonly"],
+        )
+    except Exception as e:
+        raise RuntimeError(
+            "Google Drive service account JSON is invalid or empty. "
+            "Set GOOGLE_DRIVE_CREDS_JSON in Render to a valid JSON key file."
+        ) from e
     return build("drive", "v3", credentials=creds, cache_discovery=False)
 
 

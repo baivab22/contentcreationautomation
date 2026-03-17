@@ -119,13 +119,23 @@ fi
 # Write Google Sheets service-account key.
 if [[ -n "${GOOGLE_SHEETS_CREDS_JSON:-}" ]]; then
     printf '%s' "$GOOGLE_SHEETS_CREDS_JSON" > secrets/autoscraper-489906-6efe766866da.json
-    echo "Sheets service-account key written"
+    if validate_json_file "secrets/autoscraper-489906-6efe766866da.json"; then
+        echo "Sheets service-account key written"
+    else
+        echo "WARNING: GOOGLE_SHEETS_CREDS_JSON is invalid JSON. Ignoring it."
+        rm -f secrets/autoscraper-489906-6efe766866da.json
+    fi
 fi
 
 # Write Google Drive service-account key.
 if [[ -n "${GOOGLE_DRIVE_CREDS_JSON:-}" ]]; then
     printf '%s' "$GOOGLE_DRIVE_CREDS_JSON" > secrets/ornate-grail-490114-f2-ad44024874d8.json
-    echo "Drive service-account key written"
+    if validate_json_file "secrets/ornate-grail-490114-f2-ad44024874d8.json"; then
+        echo "Drive service-account key written"
+    else
+        echo "WARNING: GOOGLE_DRIVE_CREDS_JSON is invalid JSON. Ignoring it."
+        rm -f secrets/ornate-grail-490114-f2-ad44024874d8.json
+    fi
 fi
 
 # Restore Instagram session (optional).
