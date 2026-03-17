@@ -96,6 +96,40 @@ except Exception as exc:
 PY
 }
 
+write_json_secret_file() {
+    local raw_env_name="$1"
+    local b64_env_name="$2"
+    local output_file="$3"
+    local label="$4"
+
+    local raw_value="${!raw_env_name:-}"
+    local b64_value="${!b64_env_name:-}"
+
+    if [[ -n "$b64_value" ]]; then
+        if decode_base64_env_to_file "$b64_env_name" "$output_file" \
+            && validate_json_file "$output_file"; then
+            echo "$label written from $b64_env_name"
+            return 0
+        fi
+        echo "WARNING: $b64_env_name is invalid base64/JSON. Ignoring it."
+        rm -f "$output_file"
+        return 1
+    fi
+
+    if [[ -n "$raw_value" ]]; then
+        printf '%s' "$raw_value" > "$output_file"
+        if validate_json_file "$output_file"; then
+            echo "$label written from $raw_env_name"
+            return 0
+        fi
+        echo "WARNING: $raw_env_name is invalid JSON. Ignoring it."
+        rm -f "$output_file"
+        return 1
+    fi
+
+    return 2
+}
+
 # Write config.json from env var.
 # Preferred: base64-encoded full JSON  (APP_CONFIG_JSON_B64)
 # Fallback : raw JSON string           (APP_CONFIG_JSON)
@@ -117,26 +151,18 @@ if ! validate_json_file "config.json"; then
 fi
 
 # Write Google Sheets service-account key.
-if [[ -n "${GOOGLE_SHEETS_CREDS_JSON:-}" ]]; then
-    printf '%s' "$GOOGLE_SHEETS_CREDS_JSON" > secrets/autoscraper-489906-6efe766866da.json
-    if validate_json_file "secrets/autoscraper-489906-6efe766866da.json"; then
-        echo "Sheets service-account key written"
-    else
-        echo "WARNING: GOOGLE_SHEETS_CREDS_JSON is invalid JSON. Ignoring it."
-        rm -f secrets/autoscraper-489906-6efe766866da.json
-    fi
-fi
+write_json_secret_file \
+    "GOOGLE_SHEETS_CREDS_JSON" \
+    "GOOGLE_SHEETS_CREDS_JSON_B64" \
+    "secrets/autoscraper-489906-6efe766866da.json" \
+    "Sheets service-account key" || true
 
 # Write Google Drive service-account key.
-if [[ -n "${GOOGLE_DRIVE_CREDS_JSON:-}" ]]; then
-    printf '%s' "$GOOGLE_DRIVE_CREDS_JSON" > secrets/ornate-grail-490114-f2-ad44024874d8.json
-    if validate_json_file "secrets/ornate-grail-490114-f2-ad44024874d8.json"; then
-        echo "Drive service-account key written"
-    else
-        echo "WARNING: GOOGLE_DRIVE_CREDS_JSON is invalid JSON. Ignoring it."
-        rm -f secrets/ornate-grail-490114-f2-ad44024874d8.json
-    fi
-fi
+write_json_secret_file \
+    "GOOGLE_DRIVE_CREDS_JSON" \
+    "GOOGLE_DRIVE_CREDS_JSON_B64" \
+    "secrets/ornate-grail-490114-f2-ad44024874d8.json" \
+    "Drive service-account key" || true
 
 # Restore Instagram session (optional).
 if [[ -n "${IG_SESSION_FILE_B64:-}" ]]; then
