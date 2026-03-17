@@ -9,6 +9,7 @@ Instagram Profile Monitor — Core scraper module (instagrapi-based)
 - Saves everything to an Excel file with embedded media
 """
 
+import base64
 import json
 import os
 import sys
@@ -168,6 +169,41 @@ def load_config():
         facebook_cfg.setdefault(key, value)
 
     return data
+
+
+def load_service_account_info_from_env(raw_env_names, b64_env_names):
+    for env_name in b64_env_names:
+        raw_value = os.getenv(env_name, "")
+        if not raw_value:
+            continue
+
+        compact = "".join(raw_value.strip().split())
+        if compact.endswith("%"):
+            compact = compact[:-1]
+
+        try:
+            decoded = base64.b64decode(compact, validate=False)
+            data = json.loads(decoded.decode("utf-8"))
+        except Exception:
+            continue
+
+        if isinstance(data, dict):
+            return data, env_name
+
+    for env_name in raw_env_names:
+        raw_value = os.getenv(env_name, "")
+        if not raw_value:
+            continue
+
+        try:
+            data = json.loads(raw_value)
+        except Exception:
+            continue
+
+        if isinstance(data, dict):
+            return data, env_name
+
+    return None, None
 
 
 def _as_bool(value, default=False):
@@ -430,15 +466,30 @@ def _get_sheets_service(sheets_cfg: dict):
             "google-api-python-client in the active environment."
         )
 
-    credentials_path = _resolve_credentials_file(sheets_cfg.get("credentials_file", ""))
-    identity = str(credentials_path)
+    service_account_info, env_name = load_service_account_info_from_env(
+        raw_env_names=("GOOGLE_SHEETS_CREDS_JSON", "GOOGLE_DRIVE_CREDS_JSON"),
+        b64_env_names=("GOOGLE_SHEETS_CREDS_JSON_B64", "GOOGLE_DRIVE_CREDS_JSON_B64"),
+    )
+
+    credentials_path = None
+    if service_account_info is not None:
+        identity = f"env:{env_name}:{service_account_info.get('client_email', '')}"
+    else:
+        credentials_path = _resolve_credentials_file(sheets_cfg.get("credentials_file", ""))
+        identity = str(credentials_path)
 
     with _sheets_lock:
         if _sheets_service_cache is None or _sheets_service_identity != identity:
-            creds = google_service_account.Credentials.from_service_account_file(
-                str(credentials_path),
-                scopes=[GOOGLE_SHEETS_SCOPE],
-            )
+            if service_account_info is not None:
+                creds = google_service_account.Credentials.from_service_account_info(
+                    service_account_info,
+                    scopes=[GOOGLE_SHEETS_SCOPE],
+                )
+            else:
+                creds = google_service_account.Credentials.from_service_account_file(
+                    str(credentials_path),
+                    scopes=[GOOGLE_SHEETS_SCOPE],
+                )
             _sheets_service_cache = google_build(
                 "sheets",
                 "v4",

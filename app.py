@@ -34,6 +34,7 @@ from scraper import (
     get_or_create_workbook, scrape_profile_in_range,
     load_seen_posts, save_seen_posts, monitor_profile,
     wait_with_jitter, append_post_to_excel, download_post_media,
+    load_service_account_info_from_env,
 )
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -549,12 +550,23 @@ def get_canva_drive_folder_id() -> str:
 
 def get_drive_service():
     require_drive_client()
-    credentials_path = get_drive_credentials_path()
+    service_account_info, _ = load_service_account_info_from_env(
+        raw_env_names=("GOOGLE_DRIVE_CREDS_JSON", "GOOGLE_SHEETS_CREDS_JSON"),
+        b64_env_names=("GOOGLE_DRIVE_CREDS_JSON_B64", "GOOGLE_SHEETS_CREDS_JSON_B64"),
+    )
+
     try:
-        creds = service_account.Credentials.from_service_account_file(
-            str(credentials_path),
-            scopes=["https://www.googleapis.com/auth/drive.readonly"],
-        )
+        if service_account_info is not None:
+            creds = service_account.Credentials.from_service_account_info(
+                service_account_info,
+                scopes=["https://www.googleapis.com/auth/drive.readonly"],
+            )
+        else:
+            credentials_path = get_drive_credentials_path()
+            creds = service_account.Credentials.from_service_account_file(
+                str(credentials_path),
+                scopes=["https://www.googleapis.com/auth/drive.readonly"],
+            )
     except Exception as e:
         raise RuntimeError(
             "Google Drive service account JSON is invalid or empty. "
