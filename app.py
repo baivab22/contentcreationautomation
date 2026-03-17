@@ -792,6 +792,10 @@ def post_to_facebook(file_path: Path, caption: str):
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
 
+@app.route("/healthz")
+def healthz():
+    return jsonify({"status": "ok"}), 200
+
 @app.route("/")
 def index():
     config = get_config()

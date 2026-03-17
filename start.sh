@@ -1,60 +1,126 @@
 #!/usr/bin/env bash
 # Startup script for Railway / Render free-tier deployment.
-# Secrets are never committed to git. Instead, they are stored as
-# environment variables in the platform dashboard and written to disk here.
-set -e
+# Secrets are injected via environment variables and written to local files.
+set -euo pipefail
 
-echo "=== Instagram Scraper – startup ==="
+echo "=== Instagram Scraper startup ==="
 
-# ── Create required directories ──────────────────────────────────────────────
+# Create required directories.
 mkdir -p secrets session fetch_exports downloaded_media/thumbnails tmp_publish
 
-# ── Write config.json from env var ───────────────────────────────────────────
+decode_base64_env_to_file() {
+    local env_name="$1"
+    local output_file="$2"
+    python - "$env_name" "$output_file" <<'PY'
+import base64
+import os
+import sys
+
+name = sys.argv[1]
+output_file = sys.argv[2]
+raw = os.getenv(name, "")
+if not raw:
+    sys.exit(2)
+
+# Remove whitespace and accidental shell prompt tail characters.
+value = "".join(raw.strip().split())
+if value.endswith("%"):
+    value = value[:-1]
+
+try:
+    decoded = base64.b64decode(value, validate=False)
+except Exception as exc:
+    print(f"ERROR: Invalid base64 in {name}: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+with open(output_file, "wb") as f:
+    f.write(decoded)
+PY
+}
+
+# Write config.json from env var.
 # Preferred: base64-encoded full JSON  (APP_CONFIG_JSON_B64)
 # Fallback : raw JSON string           (APP_CONFIG_JSON)
-if [ -n "$APP_CONFIG_JSON_B64" ]; then
-    echo "$APP_CONFIG_JSON_B64" | base64 -d > config.json
-    echo "✓ config.json written from APP_CONFIG_JSON_B64"
-elif [ -n "$APP_CONFIG_JSON" ]; then
+if decode_base64_env_to_file "APP_CONFIG_JSON_B64" "config.json"; then
+    echo "config.json written from APP_CONFIG_JSON_B64"
+elif [[ -n "${APP_CONFIG_JSON:-}" ]]; then
     printf '%s' "$APP_CONFIG_JSON" > config.json
-    echo "✓ config.json written from APP_CONFIG_JSON"
-elif [ -f config.json ]; then
-    echo "✓ config.json already present"
+    echo "config.json written from APP_CONFIG_JSON"
+elif [[ -f config.json ]]; then
+    echo "config.json already present"
 else
-    echo "ERROR: No config.json and no APP_CONFIG_JSON_B64/APP_CONFIG_JSON env var set." >&2
-    exit 1
+    cat > config.json <<'JSON'
+{
+  "instagram_credentials": {
+    "username": "",
+    "password": ""
+  },
+  "profiles": [],
+  "monitor_interval_seconds": 300,
+  "download_media": false,
+  "excel_file": "instagram_posts.xlsx",
+  "media_folder": "downloaded_media",
+  "ai": {
+    "openrouter": {
+      "api_key": "",
+      "model": "deepseek/deepseek-r1",
+      "prompt": "",
+      "timeout_seconds": 90,
+      "temperature": 0.5
+    }
+  },
+  "publisher": {
+    "drive": {
+      "folder_id": "",
+      "credentials_file": "secrets/ornate-grail-490114-f2-ad44024874d8.json"
+    },
+    "sheets": {
+      "enabled": true,
+      "spreadsheet_id": "",
+      "worksheet_name": "Instagram Posts",
+      "credentials_file": "secrets/autoscraper-489906-6efe766866da.json"
+    },
+    "facebook": {
+      "page_id": "",
+      "access_token": "",
+      "api_version": "v22.0"
+    }
+  }
+}
+JSON
+    echo "WARNING: No config env found. Started with a minimal fallback config."
 fi
 
-# ── Write Google Sheets service-account key ───────────────────────────────────
-# Store the whole JSON string in GOOGLE_SHEETS_CREDS_JSON env var.
-if [ -n "$GOOGLE_SHEETS_CREDS_JSON" ]; then
+# Write Google Sheets service-account key.
+if [[ -n "${GOOGLE_SHEETS_CREDS_JSON:-}" ]]; then
     printf '%s' "$GOOGLE_SHEETS_CREDS_JSON" > secrets/autoscraper-489906-6efe766866da.json
-    echo "✓ Sheets service-account key written"
+    echo "Sheets service-account key written"
 fi
 
-# ── Write Google Drive service-account key ────────────────────────────────────
-if [ -n "$GOOGLE_DRIVE_CREDS_JSON" ]; then
+# Write Google Drive service-account key.
+if [[ -n "${GOOGLE_DRIVE_CREDS_JSON:-}" ]]; then
     printf '%s' "$GOOGLE_DRIVE_CREDS_JSON" > secrets/ornate-grail-490114-f2-ad44024874d8.json
-    echo "✓ Drive service-account key written"
+    echo "Drive service-account key written"
 fi
 
-# ── Restore Instagram session (optional – avoids 2FA/challenge on cold start) ─
-# Base64-encode your current session file and store it in IG_SESSION_FILE_B64.
-#   Mac:  base64 -i session/session-baivab_bidari | pbcopy
-#   Then paste result as env var IG_SESSION_FILE_B64 in the platform dashboard.
-if [ -n "$IG_SESSION_FILE_B64" ]; then
-    echo "$IG_SESSION_FILE_B64" | base64 -d > session/session-baivab_bidari
-    echo "✓ Instagram session file restored"
+# Restore Instagram session (optional).
+if [[ -n "${IG_SESSION_FILE_B64:-}" ]]; then
+    if decode_base64_env_to_file "IG_SESSION_FILE_B64" "session/session-baivab_bidari"; then
+        echo "Instagram session file restored"
+    else
+        echo "WARNING: Failed to decode IG_SESSION_FILE_B64"
+    fi
 fi
-if [ -n "$IG_SESSION_JSON_B64" ]; then
-    echo "$IG_SESSION_JSON_B64" | base64 -d > session/session-baivab_bidari.json
-    echo "✓ Instagram session JSON restored"
+if [[ -n "${IG_SESSION_JSON_B64:-}" ]]; then
+    if decode_base64_env_to_file "IG_SESSION_JSON_B64" "session/session-baivab_bidari.json"; then
+        echo "Instagram session JSON restored"
+    else
+        echo "WARNING: Failed to decode IG_SESSION_JSON_B64"
+    fi
 fi
 
-# ── Start gunicorn ────────────────────────────────────────────────────────────
-# Single worker is required: the background monitor thread lives in process memory.
-# Increasing workers would create multiple independent monitors that fight over
-# the same Instagram session.
+# Start gunicorn.
+# Keep one worker so only one background monitor thread runs.
 echo "=== Starting gunicorn on port ${PORT:-5001} ==="
 exec gunicorn app:app \
     --bind "0.0.0.0:${PORT:-5001}" \
