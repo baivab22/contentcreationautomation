@@ -1054,10 +1054,13 @@ def append_post_to_excel(excel_path: str, row_data: dict, media_files: list[dict
     embedded_col_idx = header_index.get("Embedded Image", 7)
     rows_for_google_sheet = []
 
-    for media in media_files:
+    # When media download is disabled, still export one row using post metadata.
+    effective_media_files = media_files or [{"path": "", "type": "not-downloaded"}]
+
+    for media in effective_media_files:
         next_row = ws.max_row + 1
-        media_path = media["path"]
-        media_type = media["type"]
+        media_path = media.get("path", "")
+        media_type = media.get("type", "not-downloaded")
 
         ocr_text = ""
         if media_type == "image":
@@ -1110,7 +1113,7 @@ def append_post_to_excel(excel_path: str, row_data: dict, media_files: list[dict
             cell.alignment = Alignment(vertical="top", wrap_text=True)
             cell.border = THIN_BORDER
 
-        if media_type == "image":
+        if media_type == "image" and media_path:
             thumb_path = make_thumbnail(media_path)
             if thumb_path:
                 try:
@@ -1122,7 +1125,7 @@ def append_post_to_excel(excel_path: str, row_data: dict, media_files: list[dict
                     ws.row_dimensions[next_row].height = 100
                 except Exception as e:
                     print(f"  [!] Could not embed image: {e}")
-        else:
+        elif media_type == "video" and media_path:
             ws.cell(
                 row=next_row,
                 column=embedded_col_idx,
