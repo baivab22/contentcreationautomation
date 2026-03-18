@@ -592,13 +592,8 @@
                 <button onclick="toggleAll(true)">Select All</button>
                 <button onclick="toggleAll(false)">Deselect All</button>
             </div>
-            <div class="profile-grid" id="profileGrid">
-                {% for p in profiles %}
-                <div class="profile-chip selected" onclick="toggleChip(this)">
-                    <input type="checkbox" value="{{ p.username }}" checked>
-                    <label>@{{ p.username }}</label>
-                </div>
-                {% endfor %}
+            <div class="profile-grid" id="profileGrid" style="min-height: 60px; display: flex; align-items: center; justify-content: center; color: var(--text-muted);">
+                Loading profiles...
             </div>
         </div>
 
@@ -1047,8 +1042,38 @@
         return div.innerHTML;
     }
 
+    async function loadProfiles() {
+        try {
+            const resp = await fetch('/api/profiles');
+            if (!resp.ok) {
+                throw new Error('Failed to load profiles');
+            }
+            const profiles = await resp.json();
+            if (!Array.isArray(profiles) || profiles.length === 0) {
+                document.getElementById('profileGrid').innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);">No profiles configured. Check your config.json</div>';
+                return;
+            }
+
+            const grid = document.getElementById('profileGrid');
+            grid.innerHTML = '';
+            profiles.forEach(function (p) {
+                if (!p.username) return;
+                const chip = document.createElement('div');
+                chip.className = 'profile-chip selected';
+                chip.onclick = function () { toggleChip(this); };
+                chip.innerHTML = `<input type="checkbox" value="${escapeAttr(p.username)}" ${p.enabled ? 'checked' : ''}>
+                    <label>@${escapeHtml(p.username)}</label>`;
+                grid.appendChild(chip);
+            });
+        } catch (e) {
+            console.error('Error loading profiles:', e);
+            document.getElementById('profileGrid').innerHTML = '<div style="padding: 20px; color: var(--accent); text-align: center;">Error loading profiles</div>';
+        }
+    }
+
     setStatus('idle', 'Idle');
     setActiveExcelFile('');
+    loadProfiles();
     refreshDataTable();
 </script>
 
