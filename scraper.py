@@ -80,6 +80,7 @@ _config_warned = False
 def _default_config() -> dict:
     return {
         "instagram_credentials": {"username": "", "password": ""},
+        "instagram_allow_fresh_login": False,
         "profiles": [],
         "monitor_interval_seconds": 300,
         "download_media": False,
@@ -140,6 +141,7 @@ def load_config():
 
     # Fill required keys so API routes can keep responding even if config is partial.
     data.setdefault("instagram_credentials", fallback["instagram_credentials"])
+    data.setdefault("instagram_allow_fresh_login", fallback["instagram_allow_fresh_login"])
     data.setdefault("profiles", fallback["profiles"])
     data.setdefault("monitor_interval_seconds", fallback["monitor_interval_seconds"])
     data.setdefault("download_media", fallback["download_media"])
@@ -675,6 +677,33 @@ def _is_transient_session_error(e: Exception) -> bool:
     )
 
 
+def _looks_like_json_file(path: Path) -> bool:
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(64)
+    except Exception:
+        return False
+
+    if not head:
+        return False
+
+    stripped = head.lstrip()
+    if not stripped:
+        return False
+    return stripped[:1] in {b"{", b"["}
+
+
+def _persist_session_aliases(cl: Client, usernames: list[str]):
+    for uname in usernames:
+        cleaned = (uname or "").strip()
+        if not cleaned:
+            continue
+        try:
+            cl.dump_settings(str(SESSION_DIR / f"session-{cleaned}.json"))
+        except Exception as e:
+            print(f"[!] Could not persist session alias for @{cleaned}: {type(e).__name__}")
+
+
 def _iter_session_candidates(username: str):
     preferred = [
         SESSION_DIR / f"session-{username}.json",
@@ -684,6 +713,8 @@ def _iter_session_candidates(username: str):
     seen = set()
     for path in preferred:
         if path.exists() and path.is_file():
+            if not _looks_like_json_file(path):
+                continue
             resolved = str(path.resolve())
             if resolved not in seen:
                 seen.add(resolved)
@@ -696,6 +727,8 @@ def _iter_session_candidates(username: str):
     )
 
     for path in others:
+        if not _looks_like_json_file(path):
+            continue
         resolved = str(path.resolve())
         if resolved in seen:
             continue
@@ -730,6 +763,11 @@ def get_loader(config):
     session_file = SESSION_DIR / f"session-{username}.json"
     SESSION_DIR.mkdir(exist_ok=True)
 
+    allow_fresh_login = _as_bool(
+        os.getenv("INSTAGRAM_ALLOW_FRESH_LOGIN"),
+        default=_as_bool(config.get("instagram_allow_fresh_login"), default=False),
+    )
+
     candidates = list(_iter_session_candidates(username))
     transient_candidates: list[Path] = []
 
@@ -742,6 +780,7 @@ def get_loader(config):
 
         cl, active_username, error = _try_load_session(candidate)
         if cl is not None:
+            _persist_session_aliases(cl, [username, active_username])
             if idx == 0:
                 print(f"[+] Session valid for @{active_username}")
             else:
@@ -780,11 +819,29 @@ def get_loader(config):
                 f"[+] Reused cached session from {candidate.name} "
                 "without strict validation (transient API issue)."
             )
+            _persist_session_aliases(cl, [username])
             return cl
         except Exception as e:
             print(f"[!] Deferred session load failed ({type(e).__name__}).")
 
     # ── 2. Fresh login (no reusable saved session) ──────────────────────────
+    if not allow_fresh_login:
+        candidate_names = [p.name for p in candidates]
+        if candidate_names:
+            raise RuntimeError(
+                "No reusable Instagram session could be validated. "
+                f"Checked: {', '.join(candidate_names)}. "
+                "Fresh login is disabled to avoid IP-based blocks. "
+                "Approve login in Instagram app/web and save a valid session file, "
+                "or set INSTAGRAM_ALLOW_FRESH_LOGIN=true for one explicit fresh-login attempt."
+            )
+        raise RuntimeError(
+            "No Instagram session file found in session/. "
+            "Fresh login is disabled to avoid IP-based blocks. "
+            "Add a valid session-<username>.json file, or set "
+            "INSTAGRAM_ALLOW_FRESH_LOGIN=true for one explicit fresh-login attempt."
+        )
+
     print(f"[*] Logging in fresh as @{username}...")
     cl = Client()
     cl.delay_range = [2, 5]
