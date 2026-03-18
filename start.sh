@@ -60,10 +60,6 @@ write_fallback_config() {
         }
     },
     "publisher": {
-        "drive": {
-            "folder_id": "",
-            "credentials_file": "secrets/ornate-grail-490114-f2-ad44024874d8.json"
-        },
         "sheets": {
             "enabled": true,
             "spreadsheet_id": "",
@@ -156,21 +152,6 @@ write_json_secret_file \
     "GOOGLE_SHEETS_CREDS_JSON_B64" \
     "secrets/autoscraper-489906-6efe766866da.json" \
     "Sheets service-account key" || true
-
-# Write Google Drive service-account key.
-write_json_secret_file \
-    "GOOGLE_DRIVE_CREDS_JSON" \
-    "GOOGLE_DRIVE_CREDS_JSON_B64" \
-    "secrets/ornate-grail-490114-f2-ad44024874d8.json" \
-    "Drive service-account key" || true
-
-# If Drive key is missing, reuse the Sheets key file as a safe fallback.
-if [[ ! -f "secrets/ornate-grail-490114-f2-ad44024874d8.json" \
-    && -f "secrets/autoscraper-489906-6efe766866da.json" ]]; then
-     cp "secrets/autoscraper-489906-6efe766866da.json" \
-         "secrets/ornate-grail-490114-f2-ad44024874d8.json"
-     echo "Drive service-account key fallback copied from Sheets key file"
-fi
 
 # Restore Instagram session (optional).
 if [[ -n "${IG_SESSION_FILE_B64:-}" ]]; then

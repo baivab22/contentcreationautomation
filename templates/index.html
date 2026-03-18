@@ -9,18 +9,16 @@
             --bg: #0b0b14;
             --card: #12132a;
             --card-alt: #181a36;
+            --text: #f4f6ff;
+            --text-muted: #a8add4;
+            --border: #2a2d57;
             --accent: #e94560;
             --accent-hover: #ff6b81;
-            --accent-glow: rgba(233, 69, 96, 0.25);
-            --text: #eaeaea;
-            --text-muted: #7b83a0;
-            --border: #252748;
             --success: #2ecc71;
             --warning: #f1c40f;
             --info: #3498db;
-            --input-bg: #0d1738;
-            --shadow: 0 8px 32px rgba(0,0,0,0.5);
-            --radius: 12px;
+            --accent-glow: rgba(233, 69, 96, 0.35);
+            --input-bg: #0f1024;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -112,10 +110,10 @@
         .card {
             background: var(--card);
             border: 1px solid var(--border);
-            border-radius: var(--radius);
+            border-radius: 12px;
             padding: 24px;
             margin-bottom: 20px;
-            box-shadow: var(--shadow);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
             transition: border-color 0.2s;
         }
         .card:hover { border-color: #353760; }
@@ -549,152 +547,6 @@
         .empty-state .empty-icon { font-size: 40px; margin-bottom: 12px; }
         .empty-state p { font-size: 13px; max-width: 400px; margin: 0 auto; }
 
-        .publisher-head {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 10px;
-            margin-bottom: 14px;
-        }
-        .publisher-head-right {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-        .publisher-meta {
-            font-size: 12px;
-            color: var(--text-muted);
-        }
-        .publisher-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 14px;
-        }
-        .publisher-card {
-            background: var(--card-alt);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-        }
-        .publisher-preview-wrap {
-            background: #0a0d1e;
-            height: 180px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .publisher-preview {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            display: block;
-        }
-        .publisher-content {
-            padding: 12px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-        .publisher-file {
-            font-size: 12px;
-            font-weight: 600;
-            word-break: break-word;
-        }
-        .publisher-subtext {
-            font-size: 11px;
-            color: var(--text-muted);
-        }
-        .publisher-chip-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-        .publisher-chip {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            border-radius: 999px;
-            padding: 4px 10px;
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 0.4px;
-            border: 1px solid var(--border);
-            color: var(--text-muted);
-        }
-        .chip-confirmed {
-            border-color: rgba(46, 204, 113, 0.5);
-            color: var(--success);
-            background: rgba(46, 204, 113, 0.08);
-        }
-        .chip-pending {
-            border-color: rgba(241, 196, 15, 0.5);
-            color: var(--warning);
-            background: rgba(241, 196, 15, 0.08);
-        }
-        .publisher-caption {
-            width: 100%;
-            background: var(--input-bg);
-            border: 1px solid var(--border);
-            color: var(--text);
-            border-radius: 8px;
-            padding: 8px 10px;
-            min-height: 72px;
-            resize: vertical;
-            font-size: 12px;
-            outline: none;
-        }
-        .publisher-caption:focus {
-            border-color: var(--accent);
-            box-shadow: 0 0 0 3px var(--accent-glow);
-        }
-        .publisher-targets {
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-            font-size: 12px;
-            color: var(--text-muted);
-        }
-        .publisher-targets label {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            cursor: pointer;
-        }
-        .publisher-targets input[type="checkbox"] {
-            accent-color: var(--accent);
-        }
-        .publisher-actions {
-            display: flex;
-            gap: 8px;
-        }
-        .publisher-actions .btn {
-            flex: 1;
-            justify-content: center;
-            padding: 9px 10px;
-            font-size: 12px;
-        }
-        .publisher-status {
-            font-size: 11px;
-            min-height: 16px;
-        }
-        .publisher-status.success { color: var(--success); }
-        .publisher-status.error { color: var(--accent); }
-        .publisher-status.info { color: var(--info); }
-        .publisher-empty {
-            border: 1px dashed var(--border);
-            border-radius: 8px;
-            padding: 20px;
-            text-align: center;
-            color: var(--text-muted);
-            font-size: 13px;
-        }
-
         @media (max-width: 768px) {
             .header-inner { flex-direction: column; gap: 10px; }
             .grid-2 { grid-template-columns: 1fr; }
@@ -814,24 +666,6 @@
     </div>
 
     <div class="card">
-        <div class="publisher-head">
-            <div class="card-title" style="margin-bottom:0">
-                <span class="icon">&#128640;</span> Confirm & Post
-            </div>
-            <div class="publisher-head-right">
-                <span class="publisher-meta" id="publisherMeta">Loading Canva designs from Google Drive...</span>
-                <button class="btn btn-outline" onclick="loadPublisherItems()" style="padding: 8px 14px; font-size: 12px;">
-                    &#8635; Refresh Files
-                </button>
-            </div>
-        </div>
-
-        <div id="publisherGrid" class="publisher-grid">
-            <div class="publisher-empty">Loading Canva files from Google Drive...</div>
-        </div>
-    </div>
-
-    <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom: 16px;">
             <div class="card-title" style="margin-bottom:0">
                 <span class="icon">&#128196;</span> Scraped Data
@@ -898,7 +732,6 @@
     let currentJobId = null;
     let pollTimer = null;
     let activeExcelFile = '';
-    let pendingExcelFile = '';
 
     const today = new Date();
     const sevenDaysAgo = new Date(today);
@@ -908,6 +741,34 @@
 
     function fmt(d) {
         return d.toISOString().split('T')[0];
+    }
+
+    function getSelectedProfiles() {
+        const selected = [];
+        document.querySelectorAll('#profileGrid input[type="checkbox"]:checked').forEach(function (cb) {
+            selected.push(cb.value);
+        });
+        return selected;
+    }
+
+    function toggleChip(chipEl) {
+        const input = chipEl.querySelector('input[type="checkbox"]');
+        input.checked = !input.checked;
+        chipEl.classList.toggle('selected', input.checked);
+    }
+
+    function toggleAll(checked) {
+        document.querySelectorAll('#profileGrid .profile-chip').forEach(function (chip) {
+            const input = chip.querySelector('input[type="checkbox"]');
+            input.checked = checked;
+            chip.classList.toggle('selected', checked);
+        });
+    }
+
+    function setStatus(state, text) {
+        const dot = document.getElementById('statusDot');
+        dot.className = 'status-dot ' + (state || 'idle');
+        document.getElementById('statusText').textContent = text || 'Idle';
     }
 
     function getExcelDownloadUrl() {
@@ -930,76 +791,62 @@
         from.setDate(to.getDate() - days);
         document.getElementById('dateFrom').value = fmt(from);
         document.getElementById('dateTo').value = fmt(to);
-        document.querySelectorAll('.quick-range-btn').forEach(b => b.classList.remove('active'));
+
+        document.querySelectorAll('#quickRanges .quick-range-btn').forEach(function (b) {
+            b.classList.remove('active');
+        });
         if (btnEl) btnEl.classList.add('active');
     }
 
-    function toggleChip(el) {
-        const cb = el.querySelector('input[type="checkbox"]');
-        cb.checked = !cb.checked;
-        el.classList.toggle('selected', cb.checked);
-    }
-
-    function toggleAll(state) {
-        document.querySelectorAll('.profile-chip').forEach(el => {
-            el.querySelector('input[type="checkbox"]').checked = state;
-            el.classList.toggle('selected', state);
+    async function startRecentFetchAll(hours, btnEl) {
+        document.querySelectorAll('#quickRanges .quick-range-btn').forEach(function (b) {
+            b.classList.remove('active');
         });
-    }
+        if (btnEl) btnEl.classList.add('active');
 
-    function getSelectedProfiles() {
-        const checked = document.querySelectorAll('.profile-chip input:checked');
-        return Array.from(checked).map(cb => cb.value);
-    }
+        const btn = document.getElementById('btnScrape');
+        btn.disabled = true;
+        setStatus('running', 'Fetching...');
 
-    function showToast(message, type) {
-        type = type || 'info';
-        const container = document.getElementById('toastContainer');
-        const toast = document.createElement('div');
-        toast.className = 'toast ' + type;
-        const icons = { success: '&#10003;', error: '&#10007;', info: '&#8505;' };
-        toast.innerHTML = '<span>' + (icons[type] || '') + '</span> ' + message;
-        container.appendChild(toast);
-        setTimeout(function() {
-            toast.style.animation = 'slideOut 0.3s ease forwards';
-            setTimeout(function() { toast.remove(); }, 300);
-        }, 4000);
+        try {
+            const resp = await fetch('/api/fetch/recent', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ hours: hours }),
+            });
+            const data = await resp.json();
+            if (!resp.ok || data.error) {
+                throw new Error(data.error || 'Fetch failed');
+            }
+            startJob(data);
+        } catch (e) {
+            alert(e.message || 'Fetch failed');
+            setStatus('idle', 'Idle');
+            btn.disabled = false;
+        }
     }
 
     async function startScrape() {
-        if (currentJobId) {
-            showToast('A scrape job is already running.', 'info');
-            return;
-        }
+        if (currentJobId) return;
 
         const profiles = getSelectedProfiles();
         const dateFrom = document.getElementById('dateFrom').value;
         const dateTo = document.getElementById('dateTo').value;
 
-        if (profiles.length === 0) {
-            showToast('Please select at least one profile.', 'error');
+        if (!profiles.length) {
+            alert('Please select at least one profile.');
             return;
         }
         if (!dateFrom || !dateTo) {
-            showToast('Please select both From and To dates.', 'error');
-            return;
-        }
-        if (dateFrom > dateTo) {
-            showToast('From date must be before To date.', 'error');
+            alert('Please select both dates.');
             return;
         }
 
         const btn = document.getElementById('btnScrape');
         btn.disabled = true;
-        btn.innerHTML = '&#9203; Scraping...';
         setStatus('running', 'Scraping...');
-
-        const ps = document.getElementById('progressSection');
-        ps.classList.add('active');
+        document.getElementById('progressSection').classList.add('active');
         document.getElementById('logBox').innerHTML = '';
-        pendingExcelFile = '';
-
-        showToast('Starting scrape for ' + profiles.length + ' profile(s)...', 'info');
 
         try {
             const resp = await fetch('/api/scrape', {
@@ -1013,138 +860,67 @@
             });
             const data = await resp.json();
             if (!resp.ok || data.error) {
-                showToast('Error: ' + data.error, 'error');
-                resetBtn();
-                return;
+                throw new Error(data.error || 'Scrape failed');
             }
-            pendingExcelFile = data.excel_file || '';
-            currentJobId = data.job_id;
-            pollStatus();
-        } catch (err) {
-            showToast('Request failed: ' + err.message, 'error');
-            resetBtn();
+            startJob(data);
+        } catch (e) {
+            alert(e.message || 'Scrape failed');
+            setStatus('idle', 'Idle');
+            btn.disabled = false;
         }
     }
 
-    async function startRecentFetchAll(hours, btnEl) {
-        if (currentJobId) {
-            showToast('A scrape job is already running.', 'info');
-            return;
-        }
+    function startJob(data) {
+        currentJobId = data.job_id;
+        pollTimer = setInterval(pollJobStatus, 2000);
+        pollJobStatus();
+    }
 
-        const safeHours = Number(hours || 1);
-        if (!Number.isFinite(safeHours) || safeHours < 1) {
-            showToast('Invalid hour value.', 'error');
-            return;
-        }
-
-        document.querySelectorAll('.quick-range-btn').forEach(b => b.classList.remove('active'));
-        if (btnEl) btnEl.classList.add('active');
-
-        const btn = document.getElementById('btnScrape');
-        btn.disabled = true;
-        btn.innerHTML = '&#9203; Fetching...';
-        setStatus('running', 'Fetching last ' + safeHours + ' hour(s) for all listed accounts...');
-
-        const ps = document.getElementById('progressSection');
-        ps.classList.add('active');
-        document.getElementById('logBox').innerHTML = '';
-        pendingExcelFile = '';
-
-        showToast('Starting ' + safeHours + 'h fetch for all listed profiles...', 'info');
+    async function pollJobStatus() {
+        if (!currentJobId) return;
 
         try {
-            const resp = await fetch('/api/fetch/recent', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    hours: safeHours,
-                }),
-            });
+            const resp = await fetch('/api/job/' + currentJobId);
             const data = await resp.json();
             if (!resp.ok || data.error) {
-                showToast('Error: ' + data.error, 'error');
-                resetBtn();
-                return;
+                throw new Error(data.error || 'Job status failed');
             }
-            pendingExcelFile = data.excel_file || '';
-            currentJobId = data.job_id;
-            pollStatus();
-        } catch (err) {
-            showToast('Request failed: ' + err.message, 'error');
-            resetBtn();
-        }
-    }
 
-    function pollStatus() {
-        if (!currentJobId) return;
-        pollTimer = setInterval(async function() {
-            try {
-                const resp = await fetch('/api/job/' + currentJobId);
-                const data = await resp.json();
+            document.getElementById('pTotal').textContent = data.total_profiles || 0;
+            document.getElementById('pDone').textContent = data.profiles_done || 0;
+            document.getElementById('pPosts').textContent = data.posts_found || 0;
+            document.getElementById('pCurrent').textContent = data.current_profile || '-';
+
+            const total = data.total_profiles || 0;
+            const done = data.profiles_done || 0;
+            const pct = total ? Math.round((done / total) * 100) : 0;
+            document.getElementById('progressBar').style.width = pct + '%';
+
+            const logBox = document.getElementById('logBox');
+            const logs = data.logs || [];
+            logBox.textContent = logs.join('\n');
+            logBox.scrollTop = logBox.scrollHeight;
+
+            if (data.status === 'completed' || data.status === 'error') {
+                clearInterval(pollTimer);
+                pollTimer = null;
+                currentJobId = null;
+                document.getElementById('btnScrape').disabled = false;
+
                 if (data.excel_file) {
-                    pendingExcelFile = data.excel_file;
+                    setActiveExcelFile(data.excel_file);
                 }
-                updateProgress(data);
+                await refreshExcelInfo();
+                await loadDataTable(1);
 
-                if (data.status === 'completed' || data.status === 'error') {
-                    clearInterval(pollTimer);
-                    pollTimer = null;
-                    currentJobId = null;
-                    resetBtn();
-                    if (data.status === 'completed') {
-                        setStatus('done', 'Done!');
-                        showToast('Scraping complete! ' + data.posts_found + ' posts found.', 'success');
-                    } else {
-                        setStatus('idle', 'Error');
-                        showToast('Scraping encountered an error.', 'error');
-                    }
-                    if (pendingExcelFile) {
-                        setActiveExcelFile(pendingExcelFile);
-                    }
-                    refreshExcelInfo();
-                    loadDataTable(1);
-                }
-            } catch (e) {}
-        }, 2000);
-    }
-
-    function updateProgress(data) {
-        document.getElementById('pDone').textContent = data.profiles_done;
-        document.getElementById('pTotal').textContent = data.total_profiles;
-        document.getElementById('pPosts').textContent = data.posts_found;
-        document.getElementById('pCurrent').textContent = data.current_profile || '-';
-
-        const pct = data.total_profiles > 0
-            ? Math.round((data.profiles_done / data.total_profiles) * 100) : 0;
-        document.getElementById('progressBar').style.width = pct + '%';
-
-        const logBox = document.getElementById('logBox');
-        logBox.innerHTML = '';
-        (data.logs || []).forEach(function(line) {
-            const div = document.createElement('div');
-            div.className = 'log-line';
-            if (line.indexOf('Error') !== -1 || line.indexOf('error') !== -1) div.className += ' error';
-            else if (line.indexOf('Saved') !== -1 || line.indexOf('Done') !== -1) div.className += ' highlight';
-            else if (line.indexOf('---') !== -1 || line.indexOf('===') !== -1) div.className += ' info';
-            div.textContent = line;
-            logBox.appendChild(div);
-        });
-        logBox.scrollTop = logBox.scrollHeight;
-    }
-
-    function resetBtn() {
-        const btn = document.getElementById('btnScrape');
-        btn.disabled = false;
-        btn.innerHTML = '&#9654; Start Scraping';
-        document.getElementById('btnDownload').disabled = false;
-        document.getElementById('btnDownload2').disabled = false;
-    }
-
-    function setStatus(state, text) {
-        const dot = document.getElementById('statusDot');
-        dot.className = 'status-dot ' + (state === 'running' ? 'running' : state === 'done' ? 'done' : 'idle');
-        document.getElementById('statusText').textContent = text;
+                const ok = data.status === 'completed';
+                setStatus(ok ? 'done' : 'idle', ok ? 'Completed' : 'Error');
+                document.getElementById('btnDownload').disabled = false;
+                document.getElementById('btnDownload2').disabled = false;
+            }
+        } catch (e) {
+            console.error(e);
+        }
     }
 
     async function refreshExcelInfo() {
@@ -1155,16 +931,18 @@
             if (data.file) {
                 setActiveExcelFile(data.file);
             }
-            document.getElementById('totalRows').textContent = data.rows;
-            document.getElementById('excelRows').textContent = data.rows;
-            document.getElementById('excelSize').textContent = data.exists ? data.size_kb + ' KB' : '-';
-        } catch (e) {}
+            document.getElementById('totalRows').textContent = data.rows || 0;
+            document.getElementById('excelRows').textContent = data.rows || 0;
+            document.getElementById('excelSize').textContent = data.exists ? ((data.size_kb || 0) + ' KB') : '-';
+        } catch (e) {
+            console.error(e);
+        }
     }
 
     async function loadDataTable(page) {
         currentPage = page || 1;
         try {
-            var tableUrl = '/api/excel-data?page=' + currentPage + '&per_page=' + perPage;
+            let tableUrl = '/api/excel-data?page=' + currentPage + '&per_page=' + perPage;
             if (activeExcelFile) {
                 tableUrl += '&file=' + encodeURIComponent(activeExcelFile);
             }
@@ -1191,7 +969,7 @@
         }
 
         tbody.innerHTML = '';
-        data.rows.forEach(function(row) {
+        data.rows.forEach(function (row) {
             const tr = document.createElement('tr');
             const postLink = row['postlink'] || row['Post URL'] || '';
             const originalCaption = row['original caption'] || row['Caption / Description'] || '';
@@ -1202,50 +980,57 @@
 
             tr.innerHTML =
                 '<td class="link-cell">' + (postLink ? '<a href="' + escapeAttr(postLink) + '" target="_blank" rel="noopener noreferrer">View &#8599;</a>' : '-') + '</td>' +
-                '<td class="caption-cell" title="' + escapeHtml(originalCaption) + '">' + escapeHtml(originalCaption.substring(0, 120)) + (originalCaption.length > 120 ? '...' : '') + '</td>' +
-                '<td class="caption-cell" title="' + escapeHtml(generatedCaption) + '">' + escapeHtml(generatedCaption.substring(0, 120)) + (generatedCaption.length > 120 ? '...' : '') + '</td>' +
-                '<td class="caption-cell" title="' + escapeHtml(generatedTitle) + '">' + escapeHtml(generatedTitle) + '</td>' +
-                '<td class="caption-cell" title="' + escapeHtml(generatedDescription) + '">' + escapeHtml(generatedDescription.substring(0, 140)) + (generatedDescription.length > 140 ? '...' : '') + '</td>' +
-                '<td class="caption-cell" title="' + escapeHtml(simpleSummary) + '">' + escapeHtml(simpleSummary.substring(0, 120)) + (simpleSummary.length > 120 ? '...' : '') + '</td>';
+                '<td class="caption-cell">' + escapeHtml(originalCaption) + '</td>' +
+                '<td class="caption-cell">' + escapeHtml(generatedCaption) + '</td>' +
+                '<td class="caption-cell">' + escapeHtml(generatedTitle) + '</td>' +
+                '<td class="caption-cell">' + escapeHtml(generatedDescription) + '</td>' +
+                '<td class="caption-cell">' + escapeHtml(simpleSummary) + '</td>';
             tbody.appendChild(tr);
         });
 
-        const totalPages = Math.ceil(data.total / perPage);
-        pagination.style.display = 'flex';
+        renderPagination(data.total || 0);
+    }
 
-        const start = (currentPage - 1) * perPage + 1;
-        const end = Math.min(currentPage * perPage, data.total);
-        document.getElementById('paginationInfo').textContent =
-            'Showing ' + start + '-' + end + ' of ' + data.total + ' rows';
+    function renderPagination(total) {
+        const totalPages = Math.max(1, Math.ceil(total / perPage));
+        const pagination = document.getElementById('pagination');
+        pagination.style.display = total > 0 ? 'flex' : 'none';
+
+        const start = total ? ((currentPage - 1) * perPage + 1) : 0;
+        const end = Math.min(currentPage * perPage, total);
+        document.getElementById('paginationInfo').textContent = 'Showing ' + start + '-' + end + ' of ' + total + ' rows';
 
         const btnsContainer = document.getElementById('paginationBtns');
         btnsContainer.innerHTML = '';
 
-        var prevBtn = document.createElement('button');
+        const prevBtn = document.createElement('button');
         prevBtn.className = 'page-btn';
         prevBtn.innerHTML = '&laquo; Prev';
         prevBtn.disabled = currentPage <= 1;
-        prevBtn.onclick = function() { loadDataTable(currentPage - 1); };
+        prevBtn.onclick = function () { loadDataTable(currentPage - 1); };
         btnsContainer.appendChild(prevBtn);
 
-        var startPage = Math.max(1, currentPage - 2);
-        var endPage = Math.min(totalPages, startPage + 4);
-        for (var i = startPage; i <= endPage; i++) {
-            (function(pg) {
-                var btn = document.createElement('button');
-                btn.className = 'page-btn' + (pg === currentPage ? ' active' : '');
-                btn.textContent = pg;
-                btn.onclick = function() { loadDataTable(pg); };
-                btnsContainer.appendChild(btn);
-            })(i);
+        const startPage = Math.max(1, currentPage - 2);
+        const endPage = Math.min(totalPages, startPage + 4);
+        for (let i = startPage; i <= endPage; i++) {
+            const btn = document.createElement('button');
+            btn.className = 'page-btn' + (i === currentPage ? ' active' : '');
+            btn.textContent = i;
+            btn.onclick = function () { loadDataTable(i); };
+            btnsContainer.appendChild(btn);
         }
 
-        var nextBtn = document.createElement('button');
+        const nextBtn = document.createElement('button');
         nextBtn.className = 'page-btn';
         nextBtn.innerHTML = 'Next &raquo;';
         nextBtn.disabled = currentPage >= totalPages;
-        nextBtn.onclick = function() { loadDataTable(currentPage + 1); };
+        nextBtn.onclick = function () { loadDataTable(currentPage + 1); };
         btnsContainer.appendChild(nextBtn);
+    }
+
+    function refreshDataTable() {
+        refreshExcelInfo();
+        loadDataTable(1);
     }
 
     function escapeAttr(text) {
@@ -1256,239 +1041,15 @@
             .replace(/>/g, '&gt;');
     }
 
-    function encodePathForUrl(path) {
-        return String(path || '').split('/').map(encodeURIComponent).join('/');
-    }
-
-    function getPublisherMediaUrl(fileId) {
-        return '/publisher-media/drive/' + encodePathForUrl(fileId);
-    }
-
-    function defaultCaptionFromFilename(filename) {
-        var base = String(filename || '').replace(/\.[^/.]+$/, '');
-        return base.replace(/[_-]+/g, ' ').trim();
-    }
-
-    function findPublisherCardByFileId(fileId) {
-        var cards = document.querySelectorAll('.publisher-card');
-        for (var i = 0; i < cards.length; i++) {
-            if (cards[i].getAttribute('data-file-id') === fileId) {
-                return cards[i];
-            }
-        }
-        return null;
-    }
-
-    function setPublisherCardStatus(card, message, tone) {
-        var statusEl = card.querySelector('.js-status');
-        statusEl.className = 'publisher-status js-status ' + (tone || 'info');
-        statusEl.textContent = message || '';
-    }
-
-    function setPublisherCardConfirmed(card, confirmed) {
-        var chip = card.querySelector('.js-confirm-chip');
-        if (!chip) return;
-
-        chip.className = 'publisher-chip js-confirm-chip ' + (confirmed ? 'chip-confirmed' : 'chip-pending');
-        chip.textContent = confirmed ? 'Confirmed' : 'Pending confirm';
-    }
-
-    async function loadPublisherItems() {
-        var grid = document.getElementById('publisherGrid');
-        var meta = document.getElementById('publisherMeta');
-        grid.innerHTML = '<div class="publisher-empty">Loading Canva files from Google Drive...</div>';
-
-        try {
-            var resp = await fetch('/api/publisher/items?limit=60');
-            var data = await resp.json();
-            if (!resp.ok) {
-                throw new Error(data.error || 'Could not load Google Drive files');
-            }
-
-            renderPublisherItems(data.items || []);
-            meta.textContent = (data.count || 0) + ' Drive files ready';
-        } catch (err) {
-            grid.innerHTML = '<div class="publisher-empty">Failed to load Canva files from Google Drive.</div>';
-            meta.textContent = 'Load failed';
-            showToast('Publisher error: ' + err.message, 'error');
-        }
-    }
-
-    function renderPublisherItems(items) {
-        var grid = document.getElementById('publisherGrid');
-
-        if (!items.length) {
-            grid.innerHTML = '<div class="publisher-empty">No supported image or video files found in your Canva Google Drive folder.</div>';
-            return;
-        }
-
-        grid.innerHTML = '';
-
-        items.forEach(function(item) {
-            var card = document.createElement('div');
-            card.className = 'publisher-card';
-                        card.setAttribute('data-file-id', item.file_id);
-
-            var preview = item.media_type === 'video'
-                ? '<video class="publisher-preview" controls preload="metadata" src="' +
-                                    escapeAttr(getPublisherMediaUrl(item.file_id)) + '"></video>'
-                : '<img class="publisher-preview" loading="lazy" src="' +
-                                    escapeAttr(getPublisherMediaUrl(item.file_id)) +
-                  '" alt="' + escapeAttr(item.filename) + '">';
-
-            var chipClass = item.confirmed ? 'chip-confirmed' : 'chip-pending';
-            var chipLabel = item.confirmed ? 'Confirmed' : 'Pending confirm';
-            var postedTargets = (item.posted_targets || []).length
-                ? ' (' + item.posted_targets.join(', ') + ')'
-                : '';
-            var postedText = item.last_posted_at
-                ? 'Last posted: ' + item.last_posted_at + postedTargets
-                : 'Not posted yet';
-
-            card.innerHTML =
-                '<div class="publisher-preview-wrap">' + preview + '</div>' +
-                '<div class="publisher-content">' +
-                    '<div class="publisher-file">' + escapeHtml(item.filename) + '</div>' +
-                    '<div class="publisher-chip-row">' +
-                        '<span class="publisher-chip js-confirm-chip ' + chipClass + '">' + chipLabel + '</span>' +
-                        '<span class="publisher-subtext">Updated ' + escapeHtml(item.modified_at || '-') + '</span>' +
-                    '</div>' +
-                    '<textarea class="publisher-caption js-caption" placeholder="Write caption for this post..."></textarea>' +
-                    '<div class="publisher-targets">' +
-                        '<label><input type="checkbox" class="js-target-ig" checked> Instagram</label>' +
-                        '<label><input type="checkbox" class="js-target-fb" checked> Facebook</label>' +
-                    '</div>' +
-                    '<div class="publisher-actions">' +
-                        '<button class="btn btn-outline js-confirm-btn">Confirm</button>' +
-                        '<button class="btn btn-primary js-post-btn">Post</button>' +
-                    '</div>' +
-                    '<div class="publisher-subtext js-posted-note">' + escapeHtml(postedText) + '</div>' +
-                    '<div class="publisher-status js-status"></div>' +
-                '</div>';
-
-            var captionEl = card.querySelector('.js-caption');
-            captionEl.value = defaultCaptionFromFilename(item.filename);
-
-            card.querySelector('.js-confirm-btn').addEventListener('click', function() {
-                confirmPublisherItem(item.file_id);
-            });
-
-            card.querySelector('.js-post-btn').addEventListener('click', function() {
-                postPublisherItem(item.file_id);
-            });
-
-            grid.appendChild(card);
-        });
-    }
-
-    async function confirmPublisherItem(fileId) {
-        var card = findPublisherCardByFileId(fileId);
-        if (!card) return;
-
-        var confirmBtn = card.querySelector('.js-confirm-btn');
-        confirmBtn.disabled = true;
-        setPublisherCardStatus(card, 'Confirming...', 'info');
-
-        try {
-            var resp = await fetch('/api/publisher/confirm', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ file_id: fileId }),
-            });
-            var data = await resp.json();
-            if (!resp.ok || data.error) {
-                throw new Error(data.error || 'Confirm failed');
-            }
-
-            setPublisherCardConfirmed(card, true);
-            setPublisherCardStatus(card, 'Confirmed. You can post now.', 'success');
-            showToast('Confirmed: ' + (data.filename || fileId), 'success');
-        } catch (err) {
-            setPublisherCardStatus(card, err.message, 'error');
-            showToast('Confirm failed: ' + err.message, 'error');
-        } finally {
-            confirmBtn.disabled = false;
-        }
-    }
-
-    async function postPublisherItem(fileId) {
-        var card = findPublisherCardByFileId(fileId);
-        if (!card) return;
-
-        var postBtn = card.querySelector('.js-post-btn');
-        var confirmBtn = card.querySelector('.js-confirm-btn');
-        var caption = card.querySelector('.js-caption').value.trim();
-        var postInstagram = card.querySelector('.js-target-ig').checked;
-        var postFacebook = card.querySelector('.js-target-fb').checked;
-
-        if (!postInstagram && !postFacebook) {
-            showToast('Select at least one destination.', 'error');
-            return;
-        }
-
-        postBtn.disabled = true;
-        confirmBtn.disabled = true;
-        setPublisherCardStatus(card, 'Posting...', 'info');
-
-        try {
-            var resp = await fetch('/api/publisher/post', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    file_id: fileId,
-                    caption: caption,
-                    post_instagram: postInstagram,
-                    post_facebook: postFacebook,
-                }),
-            });
-            var data = await resp.json();
-            if (!resp.ok || data.error) {
-                throw new Error(data.error || 'Post failed');
-            }
-
-            var successfulTargets = Object.keys(data.results || {});
-            var failedTargets = Object.keys(data.errors || {});
-            var postedNote = card.querySelector('.js-posted-note');
-
-            if (successfulTargets.length) {
-                postedNote.textContent = 'Last posted just now to ' + successfulTargets.join(', ');
-                setPublisherCardConfirmed(card, false);
-            }
-
-            if (data.status === 'partial') {
-                setPublisherCardStatus(
-                    card,
-                    'Posted partially. Failed: ' + failedTargets.join(', '),
-                    'info'
-                );
-                showToast('Posted partially to ' + successfulTargets.join(', '), 'info');
-            } else {
-                setPublisherCardStatus(card, 'Posted successfully.', 'success');
-                showToast('Posted successfully to ' + successfulTargets.join(', '), 'success');
-            }
-        } catch (err) {
-            setPublisherCardStatus(card, err.message, 'error');
-            showToast('Post failed: ' + err.message, 'error');
-        } finally {
-            postBtn.disabled = false;
-            confirmBtn.disabled = false;
-        }
-    }
-
-    function refreshDataTable() {
-        loadDataTable(1);
-        refreshExcelInfo();
-        showToast('Data refreshed.', 'info');
-    }
     function escapeHtml(text) {
-        var div = document.createElement('div');
-        div.appendChild(document.createTextNode(text));
+        const div = document.createElement('div');
+        div.appendChild(document.createTextNode(String(text || '')));
         return div.innerHTML;
     }
+
+    setStatus('idle', 'Idle');
     setActiveExcelFile('');
-    refreshExcelInfo();
-    loadDataTable(1);
-    loadPublisherItems();
+    refreshDataTable();
 </script>
 
 </body>

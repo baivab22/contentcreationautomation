@@ -95,10 +95,6 @@ def _default_config() -> dict:
             }
         },
         "publisher": {
-            "drive": {
-                "folder_id": "",
-                "credentials_file": "secrets/ornate-grail-490114-f2-ad44024874d8.json",
-            },
             "sheets": {
                 "enabled": True,
                 "spreadsheet_id": "",
@@ -156,9 +152,6 @@ def load_config():
         ai_openrouter.setdefault(key, value)
 
     publisher = data.setdefault("publisher", {})
-    drive_cfg = publisher.setdefault("drive", {})
-    for key, value in fallback["publisher"]["drive"].items():
-        drive_cfg.setdefault(key, value)
 
     sheets_cfg = publisher.setdefault("sheets", {})
     for key, value in fallback["publisher"]["sheets"].items():
@@ -417,7 +410,6 @@ def get_google_sheets_config():
         config = load_config()
         publisher_cfg = config.get("publisher", {})
         sheets_cfg = publisher_cfg.get("sheets", {})
-        drive_cfg = publisher_cfg.get("drive", {})
 
         env_enabled = os.getenv("GOOGLE_SHEETS_ENABLED")
         enabled = (
@@ -441,7 +433,6 @@ def get_google_sheets_config():
             "credentials_file": (
                 os.getenv("GOOGLE_SHEETS_SERVICE_ACCOUNT_FILE")
                 or sheets_cfg.get("credentials_file")
-                or drive_cfg.get("credentials_file")
                 or ""
             ).strip(),
         }
@@ -475,8 +466,8 @@ def _get_sheets_service(sheets_cfg: dict):
         )
 
     service_account_info, env_name = load_service_account_info_from_env(
-        raw_env_names=("GOOGLE_SHEETS_CREDS_JSON", "GOOGLE_DRIVE_CREDS_JSON"),
-        b64_env_names=("GOOGLE_SHEETS_CREDS_JSON_B64", "GOOGLE_DRIVE_CREDS_JSON_B64"),
+        raw_env_names=("GOOGLE_SHEETS_CREDS_JSON",),
+        b64_env_names=("GOOGLE_SHEETS_CREDS_JSON_B64",),
     )
 
     credentials_path = None

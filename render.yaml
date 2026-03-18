@@ -21,8 +21,6 @@ services:
         sync: false         # secret – fill in dashboard, not here
       - key: GOOGLE_SHEETS_CREDS_JSON
         sync: false
-      - key: GOOGLE_DRIVE_CREDS_JSON
-        sync: false
       - key: IG_SESSION_FILE_B64
         sync: false         # optional but avoids challenge on cold start
       - key: IG_SESSION_JSON_B64

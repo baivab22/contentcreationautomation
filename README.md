@@ -55,20 +55,6 @@ python scraper.py
 - The table preview and download buttons automatically switch to that run file after completion.
 - Default date-range scraping still writes to the main `instagram_posts.xlsx` file.
 
-## Confirm And Post Flow
-
-1. In the UI, use **Canva Drive Designs**.
-2. The app lists images and videos directly from your configured Google Drive Canva folder.
-3. Click **Confirm**.
-4. Edit caption, choose destinations (`Instagram`, `Facebook`), then click **Post**.
-
-## Google Drive Setup
-
-The publisher reads Canva assets from the Google Drive folder configured in `config.json` under `publisher.drive`.
-
-- `folder_id`: Google Drive folder ID for Canva exports
-- `credentials_file`: service account JSON path used to read that folder
-
 ## Google Sheets Setup (Required For Scraped Row Sync)
 
 Scraped rows are appended to Google Sheets from the same scrape pipeline.
@@ -109,7 +95,6 @@ Or fill the values in `config.json` under `publisher.facebook`.
 ## Notes
 
 - Instagram posting uses the logged-in account from `instagram_credentials`.
-- The Confirm/Post gallery is sourced from Google Drive, not from scraped posts.
 - For PNG/WebP images, the app converts to JPG before Instagram upload.
 - Do not commit real credentials or tokens to git.
 
