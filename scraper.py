@@ -643,6 +643,66 @@ def _is_blacklist_error(e: Exception) -> bool:
     return any(marker in msg for marker in markers)
 
 
+def _is_transient_session_error(e: Exception) -> bool:
+    msg = str(e).lower()
+    error_name = type(e).__name__.lower()
+
+    if any(marker in msg for marker in ("login_required", "badpassword", "challenge", "checkpoint")):
+        return False
+
+    transient_markers = (
+        "timed out",
+        "timeout",
+        "connection",
+        "remote end closed",
+        "temporarily",
+        "try again",
+        "internal error",
+        "503",
+        "502",
+        "504",
+    )
+    transient_error_names = (
+        "connecttimeout",
+        "readtimeout",
+        "connectionerror",
+        "httperror",
+        "requestexception",
+    )
+
+    return any(marker in msg for marker in transient_markers) or any(
+        marker in error_name for marker in transient_error_names
+    )
+
+
+def _iter_session_candidates(username: str):
+    preferred = [
+        SESSION_DIR / f"session-{username}.json",
+        SESSION_DIR / f"session-{username}",
+    ]
+
+    seen = set()
+    for path in preferred:
+        if path.exists() and path.is_file():
+            resolved = str(path.resolve())
+            if resolved not in seen:
+                seen.add(resolved)
+                yield path
+
+    others = sorted(
+        [p for p in SESSION_DIR.glob("session-*") if p.is_file()],
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+
+    for path in others:
+        resolved = str(path.resolve())
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        yield path
+
+
 def _try_load_session(session_path: Path):
     """Return (client, username, error) after attempting session validation."""
     cl = Client()
@@ -670,40 +730,61 @@ def get_loader(config):
     session_file = SESSION_DIR / f"session-{username}.json"
     SESSION_DIR.mkdir(exist_ok=True)
 
-    # ── 1. Try configured account session first ─────────────────────────────
-    if session_file.exists():
-        print(f"[*] Loading saved session for @{username}...")
-        cl, active_username, error = _try_load_session(session_file)
+    candidates = list(_iter_session_candidates(username))
+    transient_candidates: list[Path] = []
+
+    # ── 1. Try configured account session first, then other session files ───
+    for idx, candidate in enumerate(candidates):
+        if idx == 0:
+            print(f"[*] Loading saved session for @{username}...")
+        else:
+            print(f"[*] Trying fallback session file: {candidate.name}")
+
+        cl, active_username, error = _try_load_session(candidate)
         if cl is not None:
-            print(f"[+] Session valid for @{active_username}")
+            if idx == 0:
+                print(f"[+] Session valid for @{active_username}")
+            else:
+                print(
+                    f"[+] Reused saved session from @{active_username} "
+                    f"(configured login: @{username})"
+                )
             return cl
+
         if error is not None and _is_challenge_error(error):
-            session_file.unlink(missing_ok=True)
+            candidate.unlink(missing_ok=True)
             raise RuntimeError(
                 f"Instagram requires manual verification for @{username}. "
                 "Log in via a browser or the official app and approve the "
                 "security check, then try again."
             ) from error
-        print(f"[!] Saved session unusable ({type(error).__name__}), trying other saved sessions...")
 
-    # ── 2. Try any other reusable session file before fresh login ───────────
-    other_sessions = sorted(
-        [p for p in SESSION_DIR.glob("session-*.json") if p != session_file],
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    for candidate in other_sessions:
-        print(f"[*] Trying fallback session file: {candidate.name}")
-        cl, active_username, error = _try_load_session(candidate)
-        if cl is not None:
+        if error is not None and _is_transient_session_error(error):
+            transient_candidates.append(candidate)
             print(
-                f"[+] Reused saved session from @{active_username} "
-                f"(configured login: @{username})"
+                f"[!] Session validation was transient for {candidate.name} "
+                f"({type(error).__name__}). Will retry it without strict validation."
             )
-            return cl
+            continue
+
         print(f"[!] Fallback session skipped ({type(error).__name__}).")
 
-    # ── 3. Fresh login (no reusable saved session) ──────────────────────────
+    # If session validation failed due transient network/API errors, keep using
+    # the cached session instead of forcing a fresh login from a blocked IP.
+    for candidate in transient_candidates:
+        try:
+            cl = Client()
+            cl.delay_range = [2, 5]
+            cl.load_settings(str(candidate))
+            print(
+                f"[+] Reused cached session from {candidate.name} "
+                "without strict validation (transient API issue)."
+            )
+            return cl
+        except Exception as e:
+            print(f"[!] Deferred session load failed ({type(e).__name__}).")
+
+    # ── 2. Fresh login (no reusable saved session) ──────────────────────────
     print(f"[*] Logging in fresh as @{username}...")
     cl = Client()
     cl.delay_range = [2, 5]
