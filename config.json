@@ -1,0 +1,89 @@
+{
+  "instagram_credentials": {
+    "username": "nepal.bees",
+    "password": "(Meropassword12@)"
+  },
+  "profiles": [
+    {
+      "id": 1,
+      "username": "indepthstory",
+      "enabled": true
+    },
+    {
+      "id": 2,
+      "username": "startupshivay",
+      "enabled": true
+    },
+    {
+      "id": 3,
+      "username": "nepalinlast24hr",
+      "enabled": true
+    },
+    {
+      "id": 4,
+      "username": "indiabees",
+      "enabled": true
+    },
+    {
+      "id": 5,
+      "username": "nonextquestion",
+      "enabled": true
+    },
+    {
+      "id": 6,
+      "username": "nepalinlast24hours",
+      "enabled": true
+    },
+    {
+      "id": 7,
+      "username": "digitalnepalofficial",
+      "enabled": true
+    },
+    {
+      "id": 8,
+      "username": "thecompletefacts",
+      "enabled": true
+    },
+    {
+      "id": 9,
+      "username": "indiatv24hrs",
+      "enabled": true
+    },
+    {
+      "id": 10,
+      "username": "tv1indialive",
+      "enabled": false
+    },
+    {
+      "id": 11,
+      "username": "indianmarket.now",
+      "enabled": false
+    }
+  ],
+  "monitor_interval_seconds": 300,
+  "download_media": false,
+  "excel_file": "instagram_posts.xlsx",
+  "media_folder": "downloaded_media",
+  "ai": {
+    "openrouter": {
+      "api_key": "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",
+      "model": "deepseek/deepseek-r1",
+      "prompt": "You are a senior SEO expert. Use simple and easy words. From the post caption, create a short title, a short description, and a one-sentence summary that is easy to understand.",
+      "timeout_seconds": 90,
+      "temperature": 0.5
+    }
+  },
+  "publisher": {
+    "sheets": {
+      "enabled": true,
+      "spreadsheet_id": "1NHvLYa061gt7fnC-igVPd831BQ9lV_MH9_-AVKpUTYc",
+      "worksheet_name": "Instagram Posts",
+      "credentials_file": "secrets/autoscraper-489906-6efe766866da.json"
+    },
+    "facebook": {
+      "page_id": "",
+      "access_token": "",
+      "api_version": "v22.0"
+    }
+  }
+}
