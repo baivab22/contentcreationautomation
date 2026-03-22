@@ -154,7 +154,8 @@ def create_scrape_job(selected_profiles, date_from: datetime, date_to: datetime,
         config = get_config()
         media_folder = BASE_DIR / config.get("media_folder", "downloaded_media")
         media_folder.mkdir(exist_ok=True)
-        download_enabled = bool(config.get("download_media", True))
+        # UI scraping should always download media for matched posts.
+        download_enabled = True
 
         if fresh_output and excel_path.exists():
             try:

@@ -53,8 +53,20 @@ SEEN_FILE = BASE_DIR / "seen_posts.json"
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-r1"
 DEFAULT_OPENROUTER_PROMPT = (
-    "You are a senior SEO expert. Use simple and clear words. "
-    "Generate a short title, a short description, and a one-sentence summary from the post caption."
+    "Given a single post's title and description, rewrite the caption to be viral-ready, "
+    "very simple, and AI-optimized for Instagram, TikTok, and Facebook. Keep or slightly "
+    "improve the title, write a strong hook in the first lines, use simple mobile-friendly "
+    "short lines, include natural SEO keywords, add curiosity and emotion, include a clear CTA, "
+    "encourage comments/shares/saves, include 8-15 natural hashtags, replace other page names "
+    "with NepalRadar, and append the disclaimer exactly."
+)
+
+DISCLAIMER_TEXT = (
+    "Disclaimer:\n"
+    "We do not own or claim any rights to the videos, images, or audio used in this post. "
+    "All content belongs to its original owners and is shared only for news, education, "
+    "information, and commentary under fair use. If you are the rightful owner and have any "
+    "concerns, please contact us via DM or email, and we will address it immediately."
 )
 
 _ai_cache: dict[str, dict] = {}
@@ -315,17 +327,94 @@ def _ensure_hashtags(caption: str, *parts: str) -> str:
     return _normalize_text(f"{body}\n\n{hashtags}", 2200)
 
 
+def _replace_other_page_refs(text: str) -> str:
+    normalized = _normalize_text(text)
+    if not normalized:
+        return ""
+
+    def replace_mention(match):
+        handle = match.group(0)
+        lower = handle.lower()
+        if "nepalradar" in lower:
+            return "@NepalRadar"
+        return "@NepalRadar"
+
+    normalized = re.sub(r"@[A-Za-z0-9._]+", replace_mention, normalized)
+    normalized = re.sub(r"\bnepal\s*radar\b", "NepalRadar", normalized, flags=re.IGNORECASE)
+    return normalized
+
+
+def _ensure_disclaimer(text: str) -> str:
+    body = _normalize_text(text, 2200)
+    if "disclaimer:" in body.lower():
+        return body
+    return _normalize_text(f"{body}\n\n{DISCLAIMER_TEXT}", 2200)
+
+
+def _sanitize_filename_part(value: str, max_len: int = 80) -> str:
+    raw = _normalize_text(value)
+    token = re.sub(r"[^A-Za-z0-9]+", "_", raw).strip("_")
+    if not token:
+        token = "post"
+    return token[:max_len]
+
+
+def _rename_media_to_title(media_path: str, generated_title: str, shortcode: str, index: int, total: int) -> str:
+    if not media_path:
+        return ""
+
+    source = Path(media_path)
+    if not source.exists() or not source.is_file():
+        return media_path
+
+    safe_title = _sanitize_filename_part(generated_title)
+    safe_code = _sanitize_filename_part(shortcode, max_len=40)
+    suffix = source.suffix or ""
+    index_suffix = f"_{index + 1}" if total > 1 else ""
+    target_name = f"{safe_title}_{safe_code}{index_suffix}{suffix}"
+    target = source.with_name(target_name)
+
+    if target == source:
+        return str(source)
+
+    dedupe = 1
+    while target.exists():
+        target = source.with_name(f"{safe_title}_{safe_code}{index_suffix}_{dedupe}{suffix}")
+        dedupe += 1
+
+    try:
+        source.rename(target)
+        return str(target)
+    except Exception as e:
+        print(f"  [!] Could not rename media file by title: {e}")
+        return str(source)
+
+
+def _build_viral_caption(generated_title: str, generated_description: str, source_text: str) -> str:
+    title = _normalize_text(generated_title, 120) or "Scroll-Stopping Social Update"
+    description = _normalize_text(generated_description, 700)
+    if not description:
+        description = _description_from_text(source_text, 360) or "Big update in simple words for everyone."
+
+    body = (
+        f"{title}\n\n"
+        f"Stop scrolling - this one matters.\n"
+        f"{description}\n\n"
+        "Simple, real, and worth your attention.\n"
+        "What do you think? Would you try this?\n"
+        "Comment, share, and save this post for later."
+    )
+
+    with_tags = _ensure_hashtags(body, title, description, source_text)
+    with_brand = _replace_other_page_refs(with_tags)
+    return _ensure_disclaimer(with_brand)
+
+
 def _fallback_ai_rewrite(caption: str, ocr_text: str) -> dict:
     clean_caption = _normalize_text(caption, 1900)
     clean_ocr = _normalize_text(ocr_text, 1800)
 
-    generated_caption = _ensure_hashtags(
-        clean_caption or clean_ocr or "Fresh update",
-        clean_caption,
-        clean_ocr,
-    )
-
-    generated_description = _description_from_text(clean_caption or clean_ocr)
+    generated_description = _description_from_text(clean_caption or clean_ocr, max_len=700)
     if not generated_description:
         generated_description = "Simple update shared for social media audiences."
 
@@ -336,6 +425,11 @@ def _fallback_ai_rewrite(caption: str, ocr_text: str) -> dict:
     new_ocr = clean_ocr or _normalize_text(clean_caption, 600)
     title_source = new_ocr or clean_caption
     generated_title = _normalize_text(_title_from_text(title_source), 120)
+    generated_caption = _build_viral_caption(
+        generated_title=generated_title,
+        generated_description=generated_description,
+        source_text=clean_caption or clean_ocr,
+    )
 
     return {
         "generated_caption": _normalize_text(generated_caption, 2200),
@@ -517,11 +611,11 @@ def rewrite_with_ai(caption: str, ocr_text: str, profile: str = "") -> dict:
         return baseline
 
     system_prompt = (
-        "You are a senior SEO and social media ranking expert for Instagram and Facebook. "
-        "Use simple, easy words that anyone can understand. Keep all facts truthful to the original. "
-        "Use the original caption as the main source, and use OCR text only if caption is empty or unclear. "
+        "You are a viral social-media caption specialist for Instagram, TikTok, and Facebook. "
+        "Use very simple English, strong hook lines, natural SEO keywords, and emotional curiosity. "
+        "Keep facts truthful to source text. Replace any other page/account references with NepalRadar. "
         "Return strict JSON only with keys: generatedCaption, generatedTitle, generatedDescription, generatedSummary. "
-        "generatedCaption must include 8-12 SEO-friendly hashtags at the end."
+        "generatedCaption must include 8-15 hashtags and must end with the exact disclaimer text provided by the user."
     )
 
     user_prompt = (
@@ -530,10 +624,12 @@ def rewrite_with_ai(caption: str, ocr_text: str, profile: str = "") -> dict:
         f"Original caption/description:\n{caption or '[empty]'}\n\n"
         f"Original OCR text:\n{ocr_text or '[empty]'}\n\n"
         "Output requirements:\n"
-        "1) generatedCaption: rewritten SEO caption with 8-12 relevant hashtags.\n"
-        "2) generatedTitle: very short, simple title, max 8 words.\n"
-        "3) generatedDescription: short description in simple words, max 2 sentences.\n"
-        "4) generatedSummary: one sentence summary in very simple words.\n"
+        "1) generatedTitle: keep title as-is or slightly improve; make it scroll-stopping and short.\n"
+        "2) generatedDescription: simple, attractive, mobile-friendly rewrite of the post description.\n"
+        "3) generatedCaption: viral-ready caption using short lines, hook in first lines, CTA for comments/shares/saves, and 8-15 hashtags.\n"
+        "4) generatedSummary: one simple sentence summary.\n"
+        "5) Replace all other page names/references with NepalRadar.\n"
+        f"6) Append this exact disclaimer at the end of generatedCaption:\n{DISCLAIMER_TEXT}\n"
         "Return strict JSON only."
     )
 
@@ -603,13 +699,19 @@ def rewrite_with_ai(caption: str, ocr_text: str, profile: str = "") -> dict:
             normalized_description = _normalize_text(generated_description, 420) or baseline["generated_description"]
             normalized_summary = _normalize_text(generated_summary, 220) or baseline["generated_summary"]
 
+            normalized_caption = _build_viral_caption(
+                generated_title=normalized_title,
+                generated_description=normalized_description,
+                source_text=normalized_caption or caption or ocr_text,
+            )
+
             result = {
-                "generated_caption": _ensure_hashtags(normalized_caption, caption, ocr_text, profile),
-                "generated_description": normalized_description,
+                "generated_caption": _normalize_text(normalized_caption, 2200),
+                "generated_description": _replace_other_page_refs(normalized_description),
                 "generated_summary": normalized_summary,
-                "generated_title": normalized_title,
+                "generated_title": _replace_other_page_refs(normalized_title),
                 "new_ocr_text": _normalize_text(new_ocr_text, 1800) or baseline["new_ocr_text"],
-                "post_title": normalized_title,
+                "post_title": _replace_other_page_refs(normalized_title),
             }
 
             with _ai_cache_lock:
@@ -926,14 +1028,45 @@ def download_post_media(cl, media: Media, media_folder: Path, download_enabled: 
     media_folder.mkdir(parents=True, exist_ok=True)
     media_files = []
 
-    # Carousels are intentionally excluded from fetching.
-    if is_carousel_media(media):
-        return media_files
-
     code = media.code
     date_str = media.taken_at.strftime("%Y%m%d_%H%M%S")
     owner = media.user.username if media.user else "unknown"
     base_name = f"{owner}_{date_str}_{code}"
+
+    if is_carousel_media(media):
+        resources = getattr(media, "resources", None) or []
+        for idx, resource in enumerate(resources, 1):
+            r_media_type = getattr(resource, "media_type", None)
+            if r_media_type == 2:
+                video_url = getattr(resource, "video_url", None)
+                if not video_url:
+                    continue
+                filename = f"{base_name}_carousel_{idx}.mp4"
+                filepath = media_folder / filename
+                _download_url(str(video_url), filepath)
+                media_files.append({"path": str(filepath), "type": "carousel-video"})
+            else:
+                image_url = getattr(resource, "thumbnail_url", None)
+                if not image_url:
+                    continue
+                filename = f"{base_name}_carousel_{idx}.jpg"
+                filepath = media_folder / filename
+                _download_url(str(image_url), filepath)
+                media_files.append({"path": str(filepath), "type": "carousel-image"})
+
+        if not media_files:
+            if media.media_type == 2 and media.video_url:
+                filename = f"{base_name}_carousel.mp4"
+                filepath = media_folder / filename
+                _download_url(str(media.video_url), filepath)
+                media_files.append({"path": str(filepath), "type": "carousel-video"})
+            elif media.thumbnail_url:
+                filename = f"{base_name}_carousel.jpg"
+                filepath = media_folder / filename
+                _download_url(str(media.thumbnail_url), filepath)
+                media_files.append({"path": str(filepath), "type": "carousel-image"})
+
+        return media_files
 
     if media.media_type == 2 and media.video_url:  # Video
         filename = f"{base_name}.mp4"
@@ -967,6 +1100,10 @@ HEADERS = [
     "OCR Text from Image",
     "Scraped At",
 ]
+
+DEFAULT_SHEET_NAME = "Instagram Posts"
+VIDEO_SHEET_NAME = "Videos"
+CAROUSEL_SHEET_NAME = "Carousels"
 
 
 def _sheet_name_literal(name: str) -> str:
@@ -1142,23 +1279,57 @@ def get_or_create_workbook(excel_path: str):
     """Open existing workbook or create a new one with headers."""
     if os.path.exists(excel_path):
         wb = load_workbook(excel_path)
-        ws = wb.active
+        if DEFAULT_SHEET_NAME in wb.sheetnames:
+            ws = wb[DEFAULT_SHEET_NAME]
+        else:
+            ws = wb.active
+            ws.title = DEFAULT_SHEET_NAME
+
         changed = _ensure_headers(ws)
+
+        for sheet_name in (VIDEO_SHEET_NAME, CAROUSEL_SHEET_NAME):
+            if sheet_name in wb.sheetnames:
+                changed = _ensure_headers(wb[sheet_name]) or changed
+            else:
+                target = wb.create_sheet(title=sheet_name)
+                for col_idx, header in enumerate(HEADERS, 1):
+                    cell = target.cell(row=1, column=col_idx, value=header)
+                    _style_header_cell(cell)
+                _ensure_headers(target)
+                changed = True
+
         if changed:
             wb.save(excel_path)
     else:
         wb = Workbook()
         ws = wb.active
-        ws.title = "Instagram Posts"
+        ws.title = DEFAULT_SHEET_NAME
         for col_idx, header in enumerate(HEADERS, 1):
             cell = ws.cell(row=1, column=col_idx, value=header)
             _style_header_cell(cell)
 
         _ensure_headers(ws)
 
+        for sheet_name in (VIDEO_SHEET_NAME, CAROUSEL_SHEET_NAME):
+            target = wb.create_sheet(title=sheet_name)
+            for col_idx, header in enumerate(HEADERS, 1):
+                cell = target.cell(row=1, column=col_idx, value=header)
+                _style_header_cell(cell)
+            _ensure_headers(target)
+
         wb.save(excel_path)
 
     return wb, ws
+
+
+def _resolve_target_sheet(wb, media_type: str, is_carousel: bool):
+    if is_carousel:
+        return wb[CAROUSEL_SHEET_NAME]
+
+    if media_type in {"video", "carousel-video"}:
+        return wb[VIDEO_SHEET_NAME]
+
+    return wb[DEFAULT_SHEET_NAME]
 
 
 def make_thumbnail(image_path: str, max_size: int = 150) -> str | None:
@@ -1187,43 +1358,63 @@ def make_thumbnail(image_path: str, max_size: int = 150) -> str | None:
 
 def append_post_to_excel(excel_path: str, row_data: dict, media_files: list[dict]):
     """Append one or more rows (one per media item) for a post to the Excel file."""
-    wb, ws = get_or_create_workbook(excel_path)
-    header_index = _get_header_index_map(ws)
-    embedded_col_idx = header_index.get("Embedded Image", 7)
+    wb, _ = get_or_create_workbook(excel_path)
     rows_for_google_sheet = []
+    is_carousel = bool(row_data.get("is_carousel"))
 
     # When media download is disabled, still export one row using post metadata.
     effective_media_files = media_files or [{"path": "", "type": "not-downloaded"}]
 
+    seed_ocr_text = ""
     for media in effective_media_files:
-        next_row = ws.max_row + 1
+        media_type = media.get("type", "")
+        media_path = media.get("path", "")
+        if media_type in {"image", "carousel-image"} and media_path:
+            seed_ocr_text = extract_text_from_image(media_path)
+            break
+
+    ai_rewrite = rewrite_with_ai(
+        caption=row_data.get("caption", ""),
+        ocr_text=seed_ocr_text,
+        profile=row_data.get("profile", ""),
+    )
+
+    generated_title = ai_rewrite.get("generated_title") or ai_rewrite.get("post_title", "")
+    generated_description = ai_rewrite.get("generated_description") or ai_rewrite.get("new_ocr_text", "")
+    generated_summary = ai_rewrite.get("generated_summary") or _one_sentence_summary(
+        row_data.get("caption", "") or generated_description
+    )
+
+    for idx, media in enumerate(effective_media_files):
         media_path = media.get("path", "")
         media_type = media.get("type", "not-downloaded")
 
+        ws = _resolve_target_sheet(wb, media_type=media_type, is_carousel=is_carousel)
+        header_index = _get_header_index_map(ws)
+        embedded_col_idx = header_index.get("Embedded Image", 7)
+        next_row = ws.max_row + 1
+
+        if media_path and generated_title:
+            media_path = _rename_media_to_title(
+                media_path=media_path,
+                generated_title=generated_title,
+                shortcode=row_data.get("shortcode", ""),
+                index=idx,
+                total=len(effective_media_files),
+            )
+
         ocr_text = ""
-        if media_type == "image":
+        if media_type in {"image", "carousel-image"}:
             ocr_text = extract_text_from_image(media_path)
 
-        ai_rewrite = rewrite_with_ai(
-            caption=row_data.get("caption", ""),
-            ocr_text=ocr_text,
-            profile=row_data.get("profile", ""),
-        )
-
         # Keep OCR column populated even when local OCR engine is unavailable.
-        if media_type == "image":
+        if media_type in {"image", "carousel-image"}:
             normalized_ocr = _normalize_text(ocr_text)
             if (not normalized_ocr) or normalized_ocr.startswith("[OCR Error"):
                 ocr_text = ai_rewrite.get("new_ocr_text", "") or _normalize_text(
                     row_data.get("caption", ""),
                     800,
                 )
-
-        generated_title = ai_rewrite.get("generated_title") or ai_rewrite.get("post_title", "")
-        generated_description = ai_rewrite.get("generated_description") or ai_rewrite.get("new_ocr_text", "")
-        generated_summary = ai_rewrite.get("generated_summary") or _one_sentence_summary(
-            row_data.get("caption", "") or generated_description
-        )
 
         row_values = {
             "postlink": row_data.get("post_url", ""),
@@ -1251,7 +1442,7 @@ def append_post_to_excel(excel_path: str, row_data: dict, media_files: list[dict
             cell.alignment = Alignment(vertical="top", wrap_text=True)
             cell.border = THIN_BORDER
 
-        if media_type == "image" and media_path:
+        if media_type in {"image", "carousel-image"} and media_path:
             thumb_path = make_thumbnail(media_path)
             if thumb_path:
                 try:
@@ -1263,7 +1454,7 @@ def append_post_to_excel(excel_path: str, row_data: dict, media_files: list[dict
                     ws.row_dimensions[next_row].height = 100
                 except Exception as e:
                     print(f"  [!] Could not embed image: {e}")
-        elif media_type == "video" and media_path:
+        elif media_type in {"video", "carousel-video"} and media_path:
             ws.cell(
                 row=next_row,
                 column=embedded_col_idx,
@@ -1326,11 +1517,6 @@ def scrape_profile_in_range(cl, username: str,
 
             reached_older = False
             for media in medias:
-                if is_carousel_media(media):
-                    code = media.code or str(getattr(media, "pk", ""))
-                    log(f"  Skipping carousel post: {code}")
-                    continue
-
                 post_date = media.taken_at
                 if post_date.tzinfo is None:
                     post_date = post_date.replace(tzinfo=timezone.utc)
@@ -1362,6 +1548,7 @@ def scrape_profile_in_range(cl, username: str,
                     "caption": caption[:2000],
                     "post_url": f"https://www.instagram.com/p/{code}/",
                     "scraped_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                    "is_carousel": is_carousel_media(media),
                 }
                 append_post_to_excel(excel_path, row_data, media_files)
                 count += 1
@@ -1399,12 +1586,6 @@ def monitor_profile(cl, username: str, seen: set,
             if post_id in seen:
                 break
 
-            if is_carousel_media(media):
-                code = media.code or post_id
-                print(f"  [*] Skipping carousel post: {code}")
-                seen.add(post_id)
-                continue
-
             code = media.code
             print(f"  [+] New post: {code} ({media.taken_at})")
 
@@ -1422,6 +1603,7 @@ def monitor_profile(cl, username: str, seen: set,
                 "caption": caption[:2000],
                 "post_url": f"https://www.instagram.com/p/{code}/",
                 "scraped_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                "is_carousel": is_carousel_media(media),
             }
             append_post_to_excel(excel_path, row_data, media_files)
 

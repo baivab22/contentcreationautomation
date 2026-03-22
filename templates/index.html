@@ -612,7 +612,6 @@
                 </div>
             </div>
             <div class="quick-ranges" id="quickRanges">
-                <button class="quick-range-btn" onclick="startRecentFetchAll(1, this)">1h (all)</button>
                 <button class="quick-range-btn" onclick="setRange(1, this)">24h</button>
                 <button class="quick-range-btn" onclick="setRange(3, this)">3 days</button>
                 <button class="quick-range-btn active" onclick="setRange(7, this)">7 days</button>
@@ -625,13 +624,9 @@
                 <button class="btn btn-primary" id="btnScrape" onclick="startScrape()">
                     &#9654; Start Scraping
                 </button>
-                <button class="btn btn-download" id="btnDownload"
-                    onclick="downloadCurrentExcel()"
+                <button class="btn btn-download" id="btnExport" onclick="exportScrapedPosts()"
                     {% if not excel_exists %}disabled{% endif %}>
-                    &#11015; Download Excel
-                </button>
-                <button class="btn btn-outline" onclick="refreshDataTable()">
-                    &#8635; Refresh
+                    &#11015; Export Scraped Posts
                 </button>
             </div>
         </div>
@@ -660,65 +655,6 @@
         <div class="log-box" id="logBox"></div>
     </div>
 
-    <div class="card">
-        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom: 16px;">
-            <div class="card-title" style="margin-bottom:0">
-                <span class="icon">&#128196;</span> Scraped Data
-            </div>
-            <button class="btn btn-download" id="btnDownload2"
-                onclick="downloadCurrentExcel()"
-                {% if not excel_exists %}disabled{% endif %}
-                style="padding: 8px 18px; font-size: 12px;">
-                &#11015; Download Excel File
-            </button>
-        </div>
-
-        <div class="excel-info-grid" id="excelInfoGrid">
-            <div class="excel-info-item">
-                <div class="value" id="excelRows">{{ row_count }}</div>
-                <div class="label">Total Rows</div>
-            </div>
-            <div class="excel-info-item">
-                <div class="value" id="excelSize">-</div>
-                <div class="label">File Size</div>
-            </div>
-            <div class="excel-info-item">
-                <div class="value" id="excelFile">xlsx</div>
-                <div class="label">Format</div>
-            </div>
-        </div>
-
-        <div class="table-wrapper" id="tableWrapper">
-            <table class="data-table" id="dataTable">
-                <thead>
-                    <tr>
-                        <th>Post Link</th>
-                        <th>Original Caption</th>
-                        <th>Generated Caption</th>
-                        <th>Generated Title</th>
-                        <th>Generated Description</th>
-                        <th>Simple Summary</th>
-                    </tr>
-                </thead>
-                <tbody id="dataTableBody">
-                    <tr>
-                        <td colspan="6" class="no-data">
-                            <div class="empty-state">
-                                <div class="empty-icon">&#128202;</div>
-                                <p>No data yet. Select profiles and a time range, then hit <strong>Start Scraping</strong> to populate this table.</p>
-                            </div>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-
-        <div class="pagination" id="pagination" style="display:none;">
-            <div class="pagination-info" id="paginationInfo">Showing 0 of 0</div>
-            <div class="pagination-btns" id="paginationBtns"></div>
-        </div>
-    </div>
-
 </div>
 
 <script>
@@ -726,7 +662,7 @@
     const perPage = 25;
     let currentJobId = null;
     let pollTimer = null;
-    let activeExcelFile = '';
+    let latestExcelFile = '';
 
     const today = new Date();
     const sevenDaysAgo = new Date(today);
@@ -766,18 +702,11 @@
         document.getElementById('statusText').textContent = text || 'Idle';
     }
 
-    function getExcelDownloadUrl() {
-        return '/download' + (activeExcelFile ? ('?file=' + encodeURIComponent(activeExcelFile)) : '');
-    }
-
-    function downloadCurrentExcel() {
-        window.location = getExcelDownloadUrl();
-    }
-
-    function setActiveExcelFile(fileRef) {
-        activeExcelFile = fileRef || '';
-        const fileLabel = activeExcelFile ? activeExcelFile.split('/').pop() : 'xlsx';
-        document.getElementById('excelFile').textContent = fileLabel;
+    function exportScrapedPosts() {
+        const url = latestExcelFile
+            ? ('/download?file=' + encodeURIComponent(latestExcelFile))
+            : '/download';
+        window.location = url;
     }
 
     function setRange(days, btnEl) {
@@ -791,34 +720,6 @@
             b.classList.remove('active');
         });
         if (btnEl) btnEl.classList.add('active');
-    }
-
-    async function startRecentFetchAll(hours, btnEl) {
-        document.querySelectorAll('#quickRanges .quick-range-btn').forEach(function (b) {
-            b.classList.remove('active');
-        });
-        if (btnEl) btnEl.classList.add('active');
-
-        const btn = document.getElementById('btnScrape');
-        btn.disabled = true;
-        setStatus('running', 'Fetching...');
-
-        try {
-            const resp = await fetch('/api/fetch/recent', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ hours: hours }),
-            });
-            const data = await resp.json();
-            if (!resp.ok || data.error) {
-                throw new Error(data.error || 'Fetch failed');
-            }
-            startJob(data);
-        } catch (e) {
-            alert(e.message || 'Fetch failed');
-            setStatus('idle', 'Idle');
-            btn.disabled = false;
-        }
     }
 
     async function startScrape() {
@@ -867,6 +768,7 @@
 
     function startJob(data) {
         currentJobId = data.job_id;
+        latestExcelFile = data.excel_file || latestExcelFile;
         pollTimer = setInterval(pollJobStatus, 2000);
         pollJobStatus();
     }
@@ -903,129 +805,18 @@
                 document.getElementById('btnScrape').disabled = false;
 
                 if (data.excel_file) {
-                    setActiveExcelFile(data.excel_file);
+                    latestExcelFile = data.excel_file;
                 }
-                await refreshExcelInfo();
-                await loadDataTable(1);
 
                 const ok = data.status === 'completed';
                 setStatus(ok ? 'done' : 'idle', ok ? 'Completed' : 'Error');
-                document.getElementById('btnDownload').disabled = false;
-                document.getElementById('btnDownload2').disabled = false;
+                if (ok) {
+                    document.getElementById('btnExport').disabled = false;
+                }
             }
         } catch (e) {
             console.error(e);
         }
-    }
-
-    async function refreshExcelInfo() {
-        try {
-            const infoUrl = '/api/excel-info' + (activeExcelFile ? ('?file=' + encodeURIComponent(activeExcelFile)) : '');
-            const resp = await fetch(infoUrl);
-            const data = await resp.json();
-            if (data.file) {
-                setActiveExcelFile(data.file);
-            }
-            document.getElementById('totalRows').textContent = data.rows || 0;
-            document.getElementById('excelRows').textContent = data.rows || 0;
-            document.getElementById('excelSize').textContent = data.exists ? ((data.size_kb || 0) + ' KB') : '-';
-        } catch (e) {
-            console.error(e);
-        }
-    }
-
-    async function loadDataTable(page) {
-        currentPage = page || 1;
-        try {
-            let tableUrl = '/api/excel-data?page=' + currentPage + '&per_page=' + perPage;
-            if (activeExcelFile) {
-                tableUrl += '&file=' + encodeURIComponent(activeExcelFile);
-            }
-            const resp = await fetch(tableUrl);
-            const data = await resp.json();
-            renderTable(data);
-        } catch (e) {
-            console.error('Failed to load data:', e);
-        }
-    }
-
-    function renderTable(data) {
-        const tbody = document.getElementById('dataTableBody');
-        const pagination = document.getElementById('pagination');
-
-        if (!data.rows || data.rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="no-data">' +
-                '<div class="empty-state">' +
-                '<div class="empty-icon">&#128202;</div>' +
-                '<p>No data yet. Select profiles and a time range, then hit <strong>Start Scraping</strong>.</p>' +
-                '</div></td></tr>';
-            pagination.style.display = 'none';
-            return;
-        }
-
-        tbody.innerHTML = '';
-        data.rows.forEach(function (row) {
-            const tr = document.createElement('tr');
-            const postLink = row['postlink'] || row['Post URL'] || '';
-            const originalCaption = row['original caption'] || row['Caption / Description'] || '';
-            const generatedCaption = row['generated caption'] || row['generate caption/description'] || '';
-            const generatedTitle = row['generated title'] || row['postTItle'] || '';
-            const generatedDescription = row['generated description'] || row['newOcrText'] || row['OCR Text from Image'] || '';
-            const simpleSummary = row['simple summary'] || row['generatedSummary'] || row['summary'] || '';
-
-            tr.innerHTML =
-                '<td class="link-cell">' + (postLink ? '<a href="' + escapeAttr(postLink) + '" target="_blank" rel="noopener noreferrer">View &#8599;</a>' : '-') + '</td>' +
-                '<td class="caption-cell">' + escapeHtml(originalCaption) + '</td>' +
-                '<td class="caption-cell">' + escapeHtml(generatedCaption) + '</td>' +
-                '<td class="caption-cell">' + escapeHtml(generatedTitle) + '</td>' +
-                '<td class="caption-cell">' + escapeHtml(generatedDescription) + '</td>' +
-                '<td class="caption-cell">' + escapeHtml(simpleSummary) + '</td>';
-            tbody.appendChild(tr);
-        });
-
-        renderPagination(data.total || 0);
-    }
-
-    function renderPagination(total) {
-        const totalPages = Math.max(1, Math.ceil(total / perPage));
-        const pagination = document.getElementById('pagination');
-        pagination.style.display = total > 0 ? 'flex' : 'none';
-
-        const start = total ? ((currentPage - 1) * perPage + 1) : 0;
-        const end = Math.min(currentPage * perPage, total);
-        document.getElementById('paginationInfo').textContent = 'Showing ' + start + '-' + end + ' of ' + total + ' rows';
-
-        const btnsContainer = document.getElementById('paginationBtns');
-        btnsContainer.innerHTML = '';
-
-        const prevBtn = document.createElement('button');
-        prevBtn.className = 'page-btn';
-        prevBtn.innerHTML = '&laquo; Prev';
-        prevBtn.disabled = currentPage <= 1;
-        prevBtn.onclick = function () { loadDataTable(currentPage - 1); };
-        btnsContainer.appendChild(prevBtn);
-
-        const startPage = Math.max(1, currentPage - 2);
-        const endPage = Math.min(totalPages, startPage + 4);
-        for (let i = startPage; i <= endPage; i++) {
-            const btn = document.createElement('button');
-            btn.className = 'page-btn' + (i === currentPage ? ' active' : '');
-            btn.textContent = i;
-            btn.onclick = function () { loadDataTable(i); };
-            btnsContainer.appendChild(btn);
-        }
-
-        const nextBtn = document.createElement('button');
-        nextBtn.className = 'page-btn';
-        nextBtn.innerHTML = 'Next &raquo;';
-        nextBtn.disabled = currentPage >= totalPages;
-        nextBtn.onclick = function () { loadDataTable(currentPage + 1); };
-        btnsContainer.appendChild(nextBtn);
-    }
-
-    function refreshDataTable() {
-        refreshExcelInfo();
-        loadDataTable(1);
     }
 
     function escapeAttr(text) {
@@ -1072,9 +863,7 @@
     }
 
     setStatus('idle', 'Idle');
-    setActiveExcelFile('');
     loadProfiles();
-    refreshDataTable();
 </script>
 
 </body>
